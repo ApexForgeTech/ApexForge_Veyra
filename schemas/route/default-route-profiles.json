@@ -1,0 +1,56 @@
+[
+  {
+    "id": "direct_isp",
+    "display_name": "Direct ISP",
+    "route_type": "direct",
+    "dns_policy": "system",
+    "webrtc_policy": "allow",
+    "leak_prevention_level": "standard",
+    "hops": [
+      "isp",
+      "target"
+    ],
+    "notes": "Low-latency direct route for trusted sessions."
+  },
+  {
+    "id": "vpn_tunnel",
+    "display_name": "VPN Tunnel",
+    "route_type": "vpn",
+    "dns_policy": "isolated",
+    "webrtc_policy": "restrict",
+    "leak_prevention_level": "elevated",
+    "hops": [
+      "vpn",
+      "target"
+    ],
+    "notes": "Encrypted single-hop route."
+  },
+  {
+    "id": "tor_bridge",
+    "display_name": "Tor Bridge",
+    "route_type": "tor",
+    "dns_policy": "proxy_bound",
+    "webrtc_policy": "disable",
+    "leak_prevention_level": "maximum",
+    "hops": [
+      "tor_entry",
+      "tor_middle",
+      "tor_exit"
+    ],
+    "notes": "Anonymity-focused route profile."
+  },
+  {
+    "id": "chained_ops",
+    "display_name": "Chained Operations Route",
+    "route_type": "chained",
+    "dns_policy": "proxy_bound",
+    "webrtc_policy": "disable",
+    "leak_prevention_level": "maximum",
+    "hops": [
+      "vpn",
+      "tor",
+      "target"
+    ],
+    "notes": "Stacked route for higher-risk workflows."
+  }
+]

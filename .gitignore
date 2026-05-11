@@ -3,6 +3,15 @@ dist/
 build/
 out/
 release/
+cmake-build-*/
+*.o
+*.obj
+*.so
+*.dll
+*.dylib
+*.a
+*.lib
+*.exe
 
 *.log
 npm-debug.log*

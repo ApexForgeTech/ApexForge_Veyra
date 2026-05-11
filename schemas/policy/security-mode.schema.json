@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apexforge.local/schemas/security-mode.schema.json",
+  "title": "Veyra Security Mode",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "display_name",
+    "javascript_policy",
+    "cookie_policy",
+    "storage_policy",
+    "webrtc_policy",
+    "permission_policy",
+    "download_policy",
+    "routing_requirement",
+    "history_retention_policy"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "enum": [
+        "casual",
+        "hardened",
+        "ghost",
+        "redteam",
+        "airgap"
+      ]
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "javascript_policy": {
+      "type": "string",
+      "enum": [
+        "allow",
+        "restrict",
+        "high_restrict"
+      ]
+    },
+    "cookie_policy": {
+      "type": "string",
+      "enum": [
+        "standard",
+        "strict",
+        "ephemeral_only"
+      ]
+    },
+    "storage_policy": {
+      "type": "string",
+      "enum": [
+        "persistent",
+        "scoped_persistent",
+        "memory_only"
+      ]
+    },
+    "webrtc_policy": {
+      "type": "string",
+      "enum": [
+        "allow",
+        "restrict",
+        "disable"
+      ]
+    },
+    "permission_policy": {
+      "type": "string",
+      "enum": [
+        "prompt",
+        "strict_prompt",
+        "deny_by_default"
+      ]
+    },
+    "download_policy": {
+      "type": "string",
+      "enum": [
+        "direct",
+        "quarantine",
+        "airgap_quarantine"
+      ]
+    },
+    "routing_requirement": {
+      "type": "string",
+      "enum": [
+        "none",
+        "isolated",
+        "multi_hop_required"
+      ]
+    },
+    "history_retention_policy": {
+      "type": "string",
+      "enum": [
+        "standard",
+        "reduced",
+        "none"
+      ]
+    },
+    "notes": {
+      "type": "string"
+    }
+  }
+}

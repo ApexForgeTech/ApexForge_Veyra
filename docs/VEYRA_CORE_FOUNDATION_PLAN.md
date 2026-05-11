@@ -36,10 +36,9 @@ The first foundational language should be `C++`.
 
 ### Why C++ first
 
-- Chromium is built in C++
 - browser process control, renderer policy, permission flow, and sandbox integration all live naturally at that level
-- a real browser is more realistically built as a Chromium-based product than as a new engine
-- the browser shell, security hooks, and policy plumbing belong in the same environment as the engine
+- the browser shell, security hooks, and policy plumbing belong in the same environment as the engine backend
+- a serious browser product still needs a low-level core even if its public identity is fully independent
 
 ### Why not Rust first
 
@@ -54,13 +53,13 @@ Rust is an excellent fit for:
 - policy sidecars
 - IPC-safe native services
 
-But the root browser layer still belongs in C++ if the product is going to integrate deeply with Chromium.
+But the root browser layer still belongs in C++ if the product is going to integrate deeply with an engine backend.
 
 ## Technology Ownership
 
 The language split should be responsibility-driven:
 
-- `C++`: browser shell, Chromium integration, sandbox and renderer policy, permission mediation
+- `C++`: browser shell, browser-core integration, sandbox and renderer policy, permission mediation
 - `Rust`: routing, quarantine pipeline, secure storage, artifact inspection, policy services
 - `TypeScript + React`: control-plane UI, dashboards, persona editor, route manager, vault views
 - `Python`: AI orchestration, local model workflows, OSINT automation, reporting
@@ -83,19 +82,19 @@ That is not a realistic product path.
 
 The correct approach is:
 
-- `Chromium fork + custom hardened browser shell`
+- `native Veyra browser shell + dedicated engine-integration layer`
 
-This gives Veyra a realistic path to compatibility, performance, and extensibility while leaving room for deep security customization.
+This keeps Veyra's product identity independent while still leaving room for compatibility, performance, and deep security customization.
 
 ## High-Level Architecture
 
 The intended architecture is:
 
-`UI Layer -> Persona and Policy Layer -> Security Layer -> Routing Layer -> Chromium Core -> OS Sandbox`
+`UI Layer -> Persona and Policy Layer -> Security Layer -> Routing Layer -> Veyra Browser Core -> OS Sandbox`
 
 More concretely, the platform can be broken down into:
 
-1. `Chromium Core`
+1. `Veyra Browser Core`
 2. `Veyra Browser Shell`
 3. `Persona Manager`
 4. `Security Policy Engine`
@@ -324,7 +323,7 @@ apps/
   shell-ui/                  # React + TypeScript control-plane interface
 
 core/
-  chromium-fork/             # Chromium source integration and patches
+  browser-core/              # engine integration and browser-core notes
   veyra-shell/               # C++ browser shell
   policy-engine/             # C++ policy enforcement
   fingerprint-layer/         # C++ anti-fingerprint logic
@@ -354,7 +353,7 @@ Decisions:
 - stop treating Electron as the long-term core
 - keep the prototype, but label it clearly as prototype-only
 - create a core-first implementation track
-- select the Chromium fork strategy
+- select the engine integration strategy
 
 Deliverables:
 
@@ -362,11 +361,11 @@ Deliverables:
 - repository split plan
 - milestone map
 
-### Phase 1: Chromium Foundation
+### Phase 1: Browser Core Foundation
 
 Tasks:
 
-1. choose the Chromium checkout and fork workflow
+1. choose the engine backend and integration workflow
 2. establish the build environment
 3. bootstrap the Veyra browser shell
 4. run a basic single-window shell
@@ -379,7 +378,7 @@ Goal:
 Deliverables:
 
 - minimal Veyra browser shell
-- custom branding on top of Chromium
+- custom Veyra browser shell branding and runtime boundary
 - working main browser process
 
 Primary language:
@@ -630,7 +629,7 @@ The following should not lead the implementation:
 
 The correct build order is:
 
-1. Chromium shell
+1. browser shell
 2. process and profile model
 3. persona partitions
 4. security modes
@@ -647,7 +646,7 @@ Only after that:
 
 A credible browser MVP for Veyra is:
 
-1. Chromium-based custom shell
+1. native custom shell
 2. multi-persona profile partitions
 3. persistent and ephemeral session handling
 4. security mode engine
@@ -696,7 +695,7 @@ Reason:
 
 - freeze architecture direction
 - restructure the repository
-- choose Chromium fork workflow
+- choose engine integration workflow
 - prepare the build environment
 
 ### Days 11-25
@@ -742,7 +741,7 @@ If the team follows this plan, the first sprint should focus on:
 
 1. separating the Electron prototype as explicitly prototype-only
 2. creating the new `core/` structure
-3. writing the Chromium shell bootstrap plan and build files
+3. writing the browser-shell bootstrap plan and build files
 4. formalizing the persona schema
 5. formalizing the security mode schema
 6. formalizing the route profile schema

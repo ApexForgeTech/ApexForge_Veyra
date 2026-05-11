@@ -1,0 +1,44 @@
+[
+  {
+    "id": "real_identity",
+    "display_name": "Real Identity",
+    "storage_partition": "persist:real_identity",
+    "route_profile_id": "direct_isp",
+    "fingerprint_profile_id": "native_stable",
+    "timezone_profile": "local",
+    "locale_profile": "system-default",
+    "extension_policy_id": "trusted_daily",
+    "ai_memory_scope": "persona:real_identity",
+    "security_mode": "casual",
+    "ephemeral": false,
+    "notes": "Default daily-use persona."
+  },
+  {
+    "id": "anonymous",
+    "display_name": "Anonymous",
+    "storage_partition": "memory:anonymous",
+    "route_profile_id": "tor_bridge",
+    "fingerprint_profile_id": "balanced_stealth",
+    "timezone_profile": "utc_generic",
+    "locale_profile": "generic-en",
+    "extension_policy_id": "minimal_locked",
+    "ai_memory_scope": "persona:anonymous",
+    "security_mode": "ghost",
+    "ephemeral": true,
+    "notes": "Ephemeral research persona."
+  },
+  {
+    "id": "red_team",
+    "display_name": "Red Team",
+    "storage_partition": "memory:red_team",
+    "route_profile_id": "chained_ops",
+    "fingerprint_profile_id": "low_noise_obfuscated",
+    "timezone_profile": "operator_override",
+    "locale_profile": "operator-controlled",
+    "extension_policy_id": "strict_redteam",
+    "ai_memory_scope": "persona:red_team",
+    "security_mode": "redteam",
+    "ephemeral": true,
+    "notes": "High-isolation operational persona."
+  }
+]

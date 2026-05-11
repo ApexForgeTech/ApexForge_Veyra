@@ -49,16 +49,19 @@ Veyra should be:
 
 The intended long-term architecture is:
 
-`UI Layer -> AI Orchestration -> Security and Isolation -> Networking -> Chromium Core -> OS Sandbox / Optional MicroVM`
+`UI Layer -> AI Orchestration -> Security and Isolation -> Networking -> Veyra Browser Core -> OS Sandbox / Optional MicroVM`
 
 ### Browser Core Strategy
 
-The most realistic foundation is:
+The product should be presented as its own browser, with its own shell, identity, and platform model.
 
-- `Chromium base`
-- `custom hardened layer on top`
+That means:
 
-Why this is the right direction:
+- Veyra should not be described as another browser's skin
+- the engine backend is a technical choice, not the product definition
+- the browser shell, policy model, routing model, and persona model belong to Veyra itself
+
+The most important requirement for the backend is:
 
 - strong modern web compatibility
 - mature extension ecosystem
@@ -75,7 +78,7 @@ A realistic progression is:
 
 1. use Electron for concept exploration
 2. extract routing and security logic into native services
-3. move to a Chromium-based custom shell
+3. move to a native Veyra browser shell
 4. add deeper hardening and optional microVM-backed research tracks
 
 ## Language and Framework Strategy
@@ -85,8 +88,8 @@ The stack should be chosen by responsibility, not by variety.
 ### Recommended Stack
 
 - `C++`
-  - Chromium integration
   - browser shell
+  - browser-core integration
   - sandbox and renderer policy
   - WebRTC and permission control
   - fingerprint surface handling
@@ -151,7 +154,7 @@ services/
   ai-orchestrator/       # Python
 
 core/
-  chromium-patches/      # C++
+  browser-core/          # C++
   sandbox-bridge/        # C++ / Rust / small C helpers
 
 packages/
@@ -274,7 +277,7 @@ The MVP should remain disciplined.
 
 A credible MVP includes:
 
-- Chromium-compatible desktop shell
+- native desktop browser shell
 - persona-based storage partitions
 - security mode switching
 - route presets
@@ -297,7 +300,7 @@ It should not attempt to deliver every advanced idea at once.
 
 ### Phase 3
 
-- Chromium patch layer
+- browser-core hardening layer
 - deeper network stack control
 - enterprise policy distribution
 - secure sync

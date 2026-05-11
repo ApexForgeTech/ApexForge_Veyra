@@ -2,9 +2,39 @@
 
 **Not Just A Browser - A Cyber Operating System.**
 
-ApexForge Veyra is a hardened browser workspace concept for daily browsing, privacy-first research, developer workflows, OSINT, and AI-assisted analysis. This repository is an Electron prototype for the product direction, not a custom browser engine.
+ApexForge Veyra is evolving along two tracks:
+
+- a current Electron prototype for product exploration
+- a new core-foundation track for a real browser architecture
+
+This repository is not yet a full native browser implementation, but it now includes the first foundation scaffolding for that direction.
 
 Full written product requirements and stack decisions are tracked in [docs/VEYRA_PRODUCT_SPEC.md](/mnt/zboth/ApexForge_Veyra/docs/VEYRA_PRODUCT_SPEC.md).
+The core-first implementation plan is tracked in [docs/VEYRA_CORE_FOUNDATION_PLAN.md](/mnt/zboth/ApexForge_Veyra/docs/VEYRA_CORE_FOUNDATION_PLAN.md).
+
+## Repository Tracks
+
+### 1. Prototype Track
+
+The existing Electron app under [`src/`](/mnt/zboth/ApexForge_Veyra/src) remains useful for:
+
+- UI exploration
+- workflow demos
+- persona and dashboard mockups
+- product concept validation
+
+### 2. Core Foundation Track
+
+The new low-level foundation work starts under:
+
+- [`core/`](/mnt/zboth/ApexForge_Veyra/core)
+- [`schemas/`](/mnt/zboth/ApexForge_Veyra/schemas)
+
+This track is where the real browser architecture begins:
+
+- C++ browser shell scaffold
+- formal persona, route, and security-mode schemas
+- build-system setup for native work
 
 ## Product Direction
 
@@ -40,7 +70,7 @@ Full written product requirements and stack decisions are tracked in [docs/VEYRA
   - UI and control plane: TypeScript + React
   - Security, routing, and artifact handling services: Rust
   - AI and automation: Python plus TypeScript integrations
-  - Browser core: Chromium base with a hardened custom layer in C++
+  - Browser core: native C++ shell with a dedicated Veyra engine-integration layer
 
 ## Realistic Language Split
 
@@ -48,7 +78,7 @@ Full written product requirements and stack decisions are tracked in [docs/VEYRA
 - `JavaScript`: minimal prototype glue in the current Electron demo
 - `Rust`: download scanning, routing control, isolation policy engine, secure storage helpers
 - `Python`: local AI orchestration, OSINT tools, report generation, YARA- and model-facing workflows
-- `C++`: Chromium-level hardening, sandbox hooks, WebRTC/WebGPU policy, fingerprint surfaces
+- `C++`: browser shell, engine integration, sandbox hooks, WebRTC/WebGPU policy, fingerprint surfaces
 - `Go`: enterprise sync, SOC connectors, fleet management, service APIs
 - `C`: only for low-level helpers where platform APIs or legacy libraries require it
 
@@ -56,15 +86,28 @@ Using both React and Angular in the same desktop client is not recommended here.
 
 ## Getting Started
 
-### Prerequisites
+### Prototype Prerequisites
 - Node.js 18+
 - npm 9+
 
-### Installation
+### Run Prototype
 
 ```bash
 npm install
 npm start
+```
+
+### Core Foundation Prerequisites
+
+- CMake 3.20+
+- A C++17 compiler
+
+### Build Core Scaffold
+
+```bash
+cmake -S . -B build/core
+cmake --build build/core
+./build/core/veyra_shell
 ```
 
 ## Current Prototype Scope
@@ -83,6 +126,23 @@ It does not yet implement:
 - full anti-fingerprinting
 - malware scanning
 - local LLM orchestration
+
+## Current Core Foundation Scope
+
+The native foundation currently includes:
+
+- repository split toward a core-first architecture
+- formal JSON schemas for personas, routes, and security modes
+- a buildable C++ shell bootstrap
+- a place to grow toward native engine integration
+
+It does not yet include:
+
+- engine backend integration
+- real tab rendering
+- native routing services
+- vault and scanning services
+- policy enforcement inside a real browser shell
 
 ## License
 
