@@ -1,0 +1,34 @@
+<svg width="500" height="500" viewBox="0 0 500 500" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background (Dark) -->
+  <rect width="500" height="500" fill="#0D0D0D"/>
+  
+  <!-- Definitions for Gradients and Glows -->
+  <defs>
+    <linearGradient id="v_gradient" x1="250" y1="150" x2="250" y2="350" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#00F2FF"/>
+      <stop offset="1" stop-color="#7000FF"/>
+    </linearGradient>
+    
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Hexagonal Shield Outline -->
+  <path d="M250 50L423.205 150V350L250 450L76.7949 350V150L250 50Z" stroke="#333333" stroke-width="4" fill="none"/>
+  
+  <!-- The 'V' Shard Logo -->
+  <g filter="url(#glow)">
+    <!-- Left Wing -->
+    <path d="M180 180L250 350L210 350L140 180H180Z" fill="url(#v_gradient)"/>
+    <!-- Right Wing -->
+    <path d="M320 180L250 350L290 350L360 180H320Z" fill="url(#v_gradient)"/>
+    <!-- Center Peak -->
+    <path d="M250 250L280 320L220 320L250 250Z" fill="#00F2FF" opacity="0.8"/>
+  </g>
+
+  <!-- VEYRA Text -->
+  <text x="250" y="420" font-family="Arial, sans-serif" font-size="40" font-weight="bold" fill="white" text-anchor="middle" letter-spacing="10">VEYRA</text>
+  <text x="250" y="445" font-family="Arial, sans-serif" font-size="12" fill="#00F2FF" text-anchor="middle" letter-spacing="2">CYBER OPERATING SYSTEM</text>
+</svg>
