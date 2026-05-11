@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/branding/logo.png" alt="Veyra Logo" width="300"/>
+</p>
+
 # ApexForge Veyra
 
 **Not Just A Browser - A Cyber Operating System.**
