@@ -2,6 +2,45 @@
   <img src="assets/branding/logo.png" alt="Veyra Logo" width="300"/>
 </p>
 
+```text
+ █████╗ ██████╗ ███████╗██╗  ██╗███████╗ ██████╗ ██████╗  ██████╗ ███████╗
+██╔══██╗██╔══██╗██╔════╝╚██╗██╔╝██╔════╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝
+███████║██████╔╝█████╗   ╚███╔╝ █████╗  ██║   ██║██████╔╝██║  ███╗█████╗
+██╔══██║██╔═══╝ ██╔══╝   ██╔██╗ ██╔══╝  ██║   ██║██╔══██╗██║   ██║██╔══╝
+██║  ██║██║     ███████╗██╔╝ ██╗██║     ╚██████╔╝██║  ██║╚██████╔╝███████╗
+╚═╝  ╚═╝╚═╝     ╚══════╝╚═╝  ╚═╝╚═╝      ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝
+
+██╗   ██╗███████╗██╗   ██╗██████╗  █████╗ 
+██║   ██║██╔════╝╚██╗ ██╔╝██╔══██╗██╔══██╗
+██║   ██║█████╗   ╚████╔╝ ██████╔╝███████║
+╚██╗ ██╔╝██╔══╝    ╚██╔╝  ██╔══██╗██╔══██║
+ ╚████╔╝ ███████╗   ██║   ██║  ██║██║  ██║
+  ╚═══╝  ╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝
+
+Compartmentalized · Secure · Persona-Driven · Cyber OS
+```
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Stack-C%2B%2B%20%7C%20Rust%20%7C%20TS%20%7C%20Python-007ACC?style=for-the-badge">
+  <img src="https://img.shields.io/badge/Architecture-Native%20Shell%20%7C%20Engine%20Integration-0d0d0d?style=for-the-badge">
+  <img src="https://img.shields.io/badge/Isolation-Multi--Persona%20%7C%20Hardened%20Partitions-7000FF?style=for-the-badge">
+  <img src="https://img.shields.io/badge/Networking-GhostNet%20%7C%20Tor%20%7C%20Proxy%20Chaining-00F2FF?style=for-the-badge">
+  <img src="https://img.shields.io/badge/Security-Sentinel%20%7C%20BlackVault%20%7C%20Anti--Fingerprint-FF8A00?style=for-the-badge">
+  <img src="https://img.shields.io/badge/Intelligence-ForgeAI%20%7C%20OSINT%20Workspace-059669?style=for-the-badge">
+</p>
+
+**ApexForge Veyra** is more than just a browser—it's a next-generation **Cyber Operating System** designed to bridge the gap between traditional browsing and high-stakes operational workflows. Built on a low-level native foundation of **C++** and **Rust**, Veyra provides deep, policy-driven compartmentalization that treats every browsing session as a distinct, isolated operational entity.
+
+### 🛡️ Core Pillars of Veyra:
+
+*   **Digital Personas**: Go beyond profiles. Veyra offers true isolation with dedicated partitions for *Work, Research, Red Team, Banking, and Disposable* sessions. Each persona maintains its own independent storage, cookie jars, and fingerprint policy.
+*   **Sentinel Guard**: A proactive security layer that monitors your privacy posture, flags phishing indicators, and enforces strict permission brokering.
+*   **GhostNet**: Advanced, route-aware networking with native support for *VPN, Tor, and residential proxy chaining*—visualized and controlled at the persona level.
+*   **BlackVault**: A secure, quarantined staging area for intercepted downloads, providing metadata analysis and risk scoring before files ever touch your host system.
+*   **ForgeAI**: A local-first AI orchestrator that assists with page summarization, script explanation, and OSINT collection without leaking your data to the cloud.
+
+Veyra is engineered for security researchers, OSINT analysts, and developers who require a professional-grade command center for their digital identity and cyber operations.
+
 # ApexForge Veyra
 
 **Not Just A Browser - A Cyber Operating System.**
