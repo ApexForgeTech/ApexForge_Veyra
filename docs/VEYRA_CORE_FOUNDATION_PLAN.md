@@ -100,8 +100,9 @@ More concretely, the platform can be broken down into:
 4. `Security Policy Engine`
 5. `Routing and Isolation Engine`
 6. `Download Vault and Artifact Scan Pipeline`
-7. `AI Orchestrator`
-8. `Workspace Modules`
+7. `Tool Integration Layer`
+8. `AI Orchestrator`
+9. `Workspace Modules`
 
 ## Core Browser Modules
 
@@ -154,6 +155,9 @@ Each persona should own its own:
 - route profile
 - AI memory namespace
 - download policy
+- evidence handling policy
+- permission baseline
+- history retention policy
 
 Minimum persona model:
 
@@ -185,6 +189,9 @@ Modes:
 - Hardened
 - Ghost
 - Red Team
+- Blue Team
+- Investigation
+- Malware Analysis
 - Airgap Transfer
 
 Each mode should define:
@@ -197,6 +204,8 @@ Each mode should define:
 - download policy
 - routing requirements
 - history retention policy
+- evidence capture behavior
+- audit behavior
 
 Primary language:
 
@@ -253,6 +262,7 @@ Planned checks:
 - entropy analysis
 - macro analysis
 - EXIF and metadata stripping where appropriate
+- evidence-preserving export where appropriate
 
 Primary languages:
 
@@ -314,6 +324,32 @@ Primary language:
 
 - `C++`
 
+### Tool Integration Layer
+
+Veyra must be able to integrate with external tools used in:
+
+- red-team operations
+- blue-team investigations
+- OSINT workflows
+- incident response
+- malware analysis
+- developer and DevSecOps tasks
+
+This layer should provide:
+
+- plugin or adapter boundaries
+- persona-aware execution context
+- route-aware execution context
+- controlled artifact import and export
+- audit logging
+- permissioned command execution
+- secure local service bridges
+
+Primary languages:
+
+- `Rust` for the execution and exchange boundary
+- `Python` for higher-level workflow adapters where appropriate
+
 ## Recommended Repository Shape
 
 The current repository is a prototype. A real foundation should evolve toward something like this:
@@ -332,6 +368,7 @@ services/
   route-engine/              # Rust
   vault-service/             # Rust
   artifact-scan/             # Rust + Python
+  tool-bridge/               # Rust tool execution boundary
   persona-store/             # Rust
 
 agents/
@@ -339,6 +376,7 @@ agents/
   osint-worker/              # Python
 
 schemas/
+  integration/
   persona/
   policy/
   route/
@@ -494,7 +532,27 @@ Primary language:
 
 - `C++`
 
-### Phase 7: Extension Isolation
+### Phase 7: Tool Integration Boundary
+
+Tasks:
+
+- define integration schemas
+- define command and service adapter boundaries
+- define persona-aware execution contracts
+- define artifact exchange contracts
+- define audit logging requirements
+- prevent unrestricted tool spawning outside policy
+
+Deliverable:
+
+- a secure integration foundation for red-team, blue-team, OSINT, and evidence workflows
+
+Primary languages:
+
+- `Rust`
+- `Python`
+
+### Phase 8: Extension Isolation
 
 Tasks:
 
@@ -512,7 +570,7 @@ Primary language:
 
 - `C++`
 
-### Phase 8: React UI Layer
+### Phase 9: React UI Layer
 
 The UI should arrive after the core foundation exists.
 
@@ -534,7 +592,7 @@ Design principle:
 - the UI should control the core
 - the core should not exist as a mock created for the UI
 
-### Phase 9: AI Orchestrator
+### Phase 10: AI Orchestrator
 
 AI belongs after the browser core, not before it.
 
@@ -559,7 +617,7 @@ Integrations:
 - Ollama
 - optional remote model gateway
 
-### Phase 10: OSINT Workspace
+### Phase 11: OSINT Workspace
 
 This should follow the AI orchestration layer.
 
@@ -571,6 +629,8 @@ Modules:
 - metadata analysis
 - username correlation
 - timeline builder
+- evidence packaging
+- report export
 
 Rule:
 
@@ -581,7 +641,20 @@ Primary languages:
 - `Python`
 - `TypeScript + React` for the UI surface
 
-### Phase 11: Developer Workspace
+### Phase 12: Blue Team and Incident Response Workspace
+
+This track should support:
+
+- IOC enrichment
+- alert pivoting
+- evidence review
+- suspicious URL and file investigation
+- case-linked browsing sessions
+- future SOC connectors
+
+This is also where evidence-preserving workflows must become first-class rather than incidental.
+
+### Phase 13: Developer Workspace
 
 This is where Veyra begins to feel like a cyber operating system.
 
@@ -598,7 +671,7 @@ This should not ship before the core security model is credible.
 
 Otherwise, it becomes a fancy dashboard rather than a serious platform.
 
-### Phase 12: MicroVM Research Track
+### Phase 14: MicroVM Research Track
 
 This should not be part of the MVP.
 
@@ -641,6 +714,7 @@ Only after that:
 7. UI panels
 8. AI assistant
 9. OSINT workspace
+10. deep tool integrations
 
 ## Real MVP Definition
 
@@ -659,6 +733,7 @@ Only after those foundations:
 8. React dashboard
 9. AI assistant
 10. OSINT workspace
+11. advanced tool integrations
 
 ## Recommended Language Order
 

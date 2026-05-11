@@ -11,8 +11,12 @@ The goal is to serve users who need more than mainstream browsing:
 - researchers
 - journalists
 - OSINT analysts
+- incident responders
+- malware analysts
+- reverse engineers
 - security teams
 - red teams
+- blue teams
 - enterprises with stricter browser controls
 
 ## Product Positioning
@@ -44,6 +48,27 @@ Veyra should be:
 - useful for research and documentation
 - extensible into AI-assisted workflows
 - designed around compartmentalization instead of treating it as an add-on
+
+## Goals
+
+The product goals are:
+
+- build an independent browser product rather than a branded wrapper
+- make compartmentalization a first-class feature
+- support real operator workflows for red team, blue team, OSINT, and incident response
+- make routing, permissions, artifact handling, and persona state policy-driven
+- provide a tool-integration model that is secure, auditable, and persona-aware
+- support AI-assisted workflows without turning the browser into a chat-first product
+
+## Non-Goals
+
+The near-term non-goals are:
+
+- building a completely new browser engine from scratch
+- shipping microVM-backed tabs in the first release
+- pretending UI mockups are equivalent to real route isolation
+- exposing unrestricted local-tool execution without policy controls
+- mixing personas, evidence, and downloads in a shared unsafe workspace
 
 ## Realistic Architecture
 
@@ -151,6 +176,7 @@ services/
   route-controller/      # Rust
   vault-service/         # Rust
   artifact-scan/         # Rust + Python integrations
+  tool-bridge/           # Rust tool execution and exchange boundary
   ai-orchestrator/       # Python
 
 core/
@@ -159,6 +185,7 @@ core/
 
 packages/
   ui-kit/
+  integration-schema/
   persona-schema/
   policy-schema/
   shared-protocols/
@@ -177,6 +204,9 @@ Target personas:
 - Work
 - Research
 - Red Team
+- Blue Team
+- Incident Response
+- Malware Analysis
 - Banking
 - Social Media
 - Disposable
@@ -187,10 +217,14 @@ Each persona should control its own:
 - storage partition
 - AI memory scope
 - route profile
+- DNS policy
+- permission defaults
 - timezone profile
 - fingerprint policy
 - extension allowlist
+- history retention behavior
 - download policy
+- evidence handling behavior
 
 The guiding rule is simple:
 
@@ -204,6 +238,9 @@ Recommended modes:
 - Hardened
 - Ghost
 - Red Team
+- Blue Team
+- Investigation
+- Malware Analysis
 - Airgap Transfer
 
 Intended behavior:
@@ -212,6 +249,9 @@ Intended behavior:
 - `Hardened`: stricter tracking resistance and permission behavior
 - `Ghost`: RAM-only, low-retention, auto-cleanup session behavior
 - `Red Team`: higher scrutiny, stronger route discipline, stronger leak prevention
+- `Blue Team`: evidence-safe investigation with stricter logging and artifact handling
+- `Investigation`: research-oriented evidence collection and pivot workflow
+- `Malware Analysis`: stronger download isolation and hostile-content handling
 - `Airgap Transfer`: controlled file handoff and analysis-first workflow
 
 ### Built-in AI
@@ -227,6 +267,8 @@ High-value AI functions:
 - assist with OSINT collection workflows
 - generate research notes and reports
 - automate repetitive browser workflows
+- explain suspicious infrastructure indicators
+- assist with documentation, triage, and evidence summarization
 
 ### Download Security
 
@@ -271,6 +313,69 @@ Useful built-ins include:
 
 This feature set should remain clearly legal and user-directed.
 
+### Tool Integration Layer
+
+Veyra should be designed to integrate with external tools used by:
+
+- red teams
+- blue teams
+- OSINT analysts
+- incident responders
+- malware analysts
+- developers
+
+The integration model should support:
+
+- plugin-style adapters or service connectors
+- persona-aware execution context
+- route-aware execution context
+- controlled artifact exchange
+- permissioned command execution
+- local service bridges instead of unrestricted process spawning
+- audit logging for tool actions
+- secure import and export of evidence and reports
+
+The browser should not treat tool integration as an afterthought. It should be part of the platform design.
+
+### Evidence and Artifact Handling
+
+Evidence-safe handling is especially important for blue-team, incident-response, and malware-analysis workflows.
+
+The platform should support:
+
+- quarantined artifact intake
+- metadata preservation where required for evidence workflows
+- metadata stripping where required for operational privacy workflows
+- explicit release paths instead of silent filesystem drops
+- auditability for acquisition, inspection, and export actions
+- persona-aware evidence storage boundaries
+
+### Blue Team and SOC Workflows
+
+Veyra should support workflows such as:
+
+- IOC enrichment
+- alert pivoting
+- threat-intelligence browsing
+- safe investigation sessions
+- evidence review and export
+- isolated review of suspicious URLs and documents
+- integration with future SOC and case-management systems
+
+### Developer Workspace
+
+Veyra is not only a browser; it is also intended to become a security-oriented workspace.
+
+The developer and operator workspace should eventually support:
+
+- terminal views
+- git context
+- SSH session management
+- API testing
+- container-aware workflows
+- documentation and code review surfaces
+- AI-assisted coding and explanation
+
 ## MVP Scope
 
 The MVP should remain disciplined.
@@ -285,6 +390,7 @@ A credible MVP includes:
 - phishing and download warnings
 - basic AI assistance
 - basic OSINT workspace
+- initial tool-integration boundaries
 
 It should not attempt to deliver every advanced idea at once.
 

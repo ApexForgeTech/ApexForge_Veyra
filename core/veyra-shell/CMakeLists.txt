@@ -1,5 +1,8 @@
 add_executable(veyra_shell
+  src/foundation_loader.cc
+  src/json.cc
   src/main.cc
+  src/profile_registry.cc
   src/startup_config.cc
 )
 
