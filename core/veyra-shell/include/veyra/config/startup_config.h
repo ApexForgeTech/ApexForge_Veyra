@@ -1,5 +1,5 @@
-#ifndef VEYRA_STARTUP_CONFIG_H_
-#define VEYRA_STARTUP_CONFIG_H_
+#ifndef VEYRA_CONFIG_STARTUP_CONFIG_H_
+#define VEYRA_CONFIG_STARTUP_CONFIG_H_
 
 #include <string>
 #include <vector>
@@ -25,4 +25,4 @@ std::vector<ValidationIssue> ValidateStartupConfig(const StartupConfig& config);
 
 }  // namespace veyra
 
-#endif  // VEYRA_STARTUP_CONFIG_H_
+#endif  // VEYRA_CONFIG_STARTUP_CONFIG_H_

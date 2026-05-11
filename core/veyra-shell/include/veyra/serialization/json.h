@@ -1,5 +1,5 @@
-#ifndef VEYRA_JSON_H_
-#define VEYRA_JSON_H_
+#ifndef VEYRA_SERIALIZATION_JSON_H_
+#define VEYRA_SERIALIZATION_JSON_H_
 
 #include <map>
 #include <string>
@@ -47,4 +47,4 @@ JsonParseResult ParseJson(const std::string& input);
 
 }  // namespace veyra
 
-#endif  // VEYRA_JSON_H_
+#endif  // VEYRA_SERIALIZATION_JSON_H_

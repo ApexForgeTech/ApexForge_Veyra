@@ -1,4 +1,4 @@
-#include "veyra/profile_registry.h"
+#include "veyra/runtime/profile_registry.h"
 
 #include <set>
 

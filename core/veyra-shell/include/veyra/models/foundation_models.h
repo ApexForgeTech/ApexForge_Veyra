@@ -1,7 +1,5 @@
-#ifndef VEYRA_FOUNDATION_LOADER_H_
-#define VEYRA_FOUNDATION_LOADER_H_
-
-#include "veyra/startup_config.h"
+#ifndef VEYRA_MODELS_FOUNDATION_MODELS_H_
+#define VEYRA_MODELS_FOUNDATION_MODELS_H_
 
 #include <string>
 #include <vector>
@@ -54,13 +52,6 @@ struct FoundationState {
   std::vector<RouteProfileDefinition> route_profiles;
 };
 
-struct LoadResult {
-  FoundationState state;
-  std::vector<ValidationIssue> issues;
-};
-
-LoadResult LoadFoundation(const StartupConfig& config);
-
 }  // namespace veyra
 
-#endif  // VEYRA_FOUNDATION_LOADER_H_
+#endif  // VEYRA_MODELS_FOUNDATION_MODELS_H_

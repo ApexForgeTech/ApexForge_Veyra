@@ -1,9 +1,13 @@
 add_executable(veyra_shell
-  src/foundation_loader.cc
-  src/json.cc
+  src/config/foundation_loader.cc
+  src/config/startup_config.cc
   src/main.cc
-  src/profile_registry.cc
-  src/startup_config.cc
+  src/runtime/browser_window.cc
+  src/runtime/profile_manager.cc
+  src/runtime/profile_registry.cc
+  src/runtime/session_partition.cc
+  src/runtime/tab_model.cc
+  src/serialization/json.cc
 )
 
 target_include_directories(veyra_shell

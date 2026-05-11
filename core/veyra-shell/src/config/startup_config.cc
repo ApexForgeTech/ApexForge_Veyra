@@ -1,4 +1,4 @@
-#include "veyra/startup_config.h"
+#include "veyra/config/startup_config.h"
 
 #include <filesystem>
 

@@ -1,9 +1,10 @@
-#ifndef VEYRA_PROFILE_REGISTRY_H_
-#define VEYRA_PROFILE_REGISTRY_H_
+#ifndef VEYRA_RUNTIME_PROFILE_REGISTRY_H_
+#define VEYRA_RUNTIME_PROFILE_REGISTRY_H_
 
-#include "veyra/foundation_loader.h"
-#include "veyra/startup_config.h"
+#include "veyra/config/foundation_loader.h"
+#include "veyra/config/startup_config.h"
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -25,4 +26,4 @@ RegistryBootstrapResult BootstrapProfileRegistry(const StartupConfig& config);
 
 }  // namespace veyra
 
-#endif  // VEYRA_PROFILE_REGISTRY_H_
+#endif  // VEYRA_RUNTIME_PROFILE_REGISTRY_H_

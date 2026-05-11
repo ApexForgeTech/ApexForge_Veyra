@@ -1,6 +1,6 @@
-#include "veyra/foundation_loader.h"
+#include "veyra/config/foundation_loader.h"
 
-#include "veyra/json.h"
+#include "veyra/serialization/json.h"
 
 #include <fstream>
 #include <functional>
@@ -76,8 +76,7 @@ std::optional<std::vector<std::string>> RequireStringArray(const JsonValue::Obje
   }
 
   std::vector<std::string> strings;
-  for (std::size_t index = 0; index < value->AsArray().size(); ++index) {
-    const JsonValue& item = value->AsArray()[index];
+  for (const JsonValue& item : value->AsArray()) {
     if (!item.IsString()) {
       issues->push_back({path, "Property '" + key + "' must contain only strings."});
       return std::nullopt;
@@ -88,12 +87,15 @@ std::optional<std::vector<std::string>> RequireStringArray(const JsonValue::Obje
 }
 
 template <typename Item>
+using ParseFunction = std::function<std::optional<Item>(const JsonValue::Object&,
+                                                        const std::string&,
+                                                        std::vector<ValidationIssue>*)>;
+
+template <typename Item>
 std::vector<Item> ParseTopLevelArray(const JsonValue& root,
                                      const std::string& path,
                                      std::vector<ValidationIssue>* issues,
-                                     const std::function<std::optional<Item>(const JsonValue::Object&,
-                                                                              const std::string&,
-                                                                              std::vector<ValidationIssue>*)>& parser) {
+                                     const ParseFunction<Item>& parser) {
   std::vector<Item> items;
   if (!root.IsArray()) {
     issues->push_back({path, "Root document must be a JSON array."});
@@ -236,20 +238,17 @@ std::optional<RouteProfileDefinition> ParseRouteProfile(const JsonValue::Object&
 template <typename Item>
 std::vector<Item> LoadArrayFile(const std::string& path,
                                 std::vector<ValidationIssue>* issues,
-                                const std::function<std::optional<Item>(const JsonValue::Object&,
-                                                                         const std::string&,
-                                                                         std::vector<ValidationIssue>*)>& parser) {
-  std::vector<Item> items;
+                                const ParseFunction<Item>& parser) {
   const std::optional<std::string> content = ReadFile(path);
   if (!content.has_value()) {
     issues->push_back({path, "Unable to read file."});
-    return items;
+    return {};
   }
 
   JsonParseResult parsed = ParseJson(*content);
   if (!parsed.error.empty()) {
     issues->push_back({path, parsed.error});
-    return items;
+    return {};
   }
 
   return ParseTopLevelArray<Item>(parsed.value, path, issues, parser);
@@ -264,7 +263,8 @@ LoadResult LoadFoundation(const StartupConfig& config) {
     return result;
   }
 
-  result.state.personas = LoadArrayFile<PersonaDefinition>(config.seed_personas_path, &result.issues, ParsePersona);
+  result.state.personas =
+      LoadArrayFile<PersonaDefinition>(config.seed_personas_path, &result.issues, ParsePersona);
   result.state.security_modes = LoadArrayFile<SecurityModeDefinition>(
       config.seed_security_modes_path, &result.issues, ParseSecurityMode);
   result.state.route_profiles = LoadArrayFile<RouteProfileDefinition>(
