@@ -1,0 +1,23 @@
+{
+  "name": "apexforge-veyra",
+  "version": "1.0.0",
+  "description": "ApexForge Veyra: The cyber operating system browser for AI, OSINT, developer workflows, and privacy-first browsing.",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "env -u ELECTRON_RUN_AS_NODE electron .",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "browser",
+    "electron",
+    "security",
+    "privacy",
+    "osint",
+    "ai"
+  ],
+  "author": "ApexForge",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^34.0.0"
+  }
+}

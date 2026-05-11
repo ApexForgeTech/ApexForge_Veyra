@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ApexForge Veyra</title>
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <div id="app-container">
+      <aside id="sidebar">
+        <div class="logo">AF</div>
+        <nav>
+          <button class="nav-btn active" data-panel="browser" title="Browser">🌐</button>
+          <button class="nav-btn" data-panel="personas" title="Digital Personas">🎭</button>
+          <button class="nav-btn" data-panel="ai" title="ForgeAI">🤖</button>
+          <button class="nav-btn" data-panel="osint" title="OSINT Dashboard">🔍</button>
+          <button class="nav-btn" data-panel="network" title="GhostNet Routing">📡</button>
+          <button class="nav-btn" data-panel="security" title="Sentinel Guard">🛡️</button>
+        </nav>
+        <div class="bottom-nav">
+          <button id="settings-btn" title="Settings">⚙️</button>
+        </div>
+      </aside>
+
+      <main id="main-view">
+        <div id="browser-panel" class="panel active">
+          <div id="toolbar">
+            <div id="nav-buttons">
+              <button id="back-button" title="Back">&lt;</button>
+              <button id="forward-button" title="Forward">&gt;</button>
+              <button id="reload-button" title="Reload">&#8635;</button>
+            </div>
+            <div id="url-bar-container">
+              <span id="persona-indicator" title="Current Persona">👤 Default</span>
+              <input type="text" id="url-input" placeholder="Enter URL or secure search...">
+            </div>
+            <button id="go-button">Go</button>
+            <select id="security-mode-selector">
+              <option value="casual">Casual Mode</option>
+              <option value="hardened">Hardened Mode</option>
+              <option value="ghost">Ghost Mode</option>
+            </select>
+            <div id="security-indicator" title="Security Level">🟢 Normal</div>
+          </div>
+          <div id="webview-container">
+            <webview id="webview" src="https://www.google.com" partition="persist:default"></webview>
+          </div>
+        </div>
+
+        <div id="personas-panel" class="panel">
+          <h2>Digital Personas</h2>
+          <div class="persona-list">
+            <div class="persona-card active" data-persona="default">
+              <h3>Real Identity</h3>
+              <p>Standard ISP, Local Timezone</p>
+            </div>
+            <div class="persona-card" data-persona="anon">
+              <h3>Anonymous</h3>
+              <p>VPN/Tor, Random Fingerprint</p>
+            </div>
+            <div class="persona-card" data-persona="redteam">
+              <h3>Red Team</h3>
+              <p>Chained Route, Kali Environment</p>
+            </div>
+          </div>
+        </div>
+
+        <div id="ai-panel" class="panel">
+          <h2>ForgeAI Assistant</h2>
+          <div id="ai-chat">
+            <div id="ai-chat-log" class="chat-log">
+              <div class="message ai">Welcome to ApexForge Veyra. I am ForgeAI. How can I assist your mission today?</div>
+            </div>
+            <div class="ai-actions">
+              <button id="ai-analyze-btn" class="tool-btn">Analyze Page</button>
+              <button id="ai-clear-btn" class="tool-btn">Clear Logs</button>
+            </div>
+            <div class="chat-input-area">
+              <input type="text" id="ai-chat-input" placeholder="Ask Veyra...">
+              <button id="ai-send-btn">Send</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="osint-panel" class="panel">
+          <h2>OSINT Workspace</h2>
+          <div class="osint-input-group">
+            <input type="text" id="osint-target" placeholder="Enter domain or username...">
+            <button id="osint-scan-btn">Initiate Scan</button>
+          </div>
+          <div id="osint-results">
+            <div class="result-placeholder">System ready for intelligence gathering.</div>
+          </div>
+          <div class="osint-quick-links">
+            <button class="tool-btn" id="osint-whois-btn">WHOIS</button>
+            <button class="tool-btn" id="osint-dns-btn">DNS Map</button>
+            <button class="tool-btn" id="osint-meta-btn">Strip Metadata</button>
+          </div>
+        </div>
+
+        <div id="network-panel" class="panel">
+          <h2>GhostNet Routing</h2>
+          <div class="network-map">
+            <div class="route-display">
+              <div class="node origin">You</div>
+              <div class="connection active"></div>
+              <div class="node hop">VPN</div>
+              <div class="connection"></div>
+              <div class="node hop">Tor</div>
+              <div class="connection"></div>
+              <div class="node target">Internet</div>
+            </div>
+            <div class="route-controls">
+              <button class="tool-btn active">Direct (ISP)</button>
+              <button class="tool-btn">VPN Tunnel</button>
+              <button class="tool-btn">Tor Bridge</button>
+              <button class="tool-btn">Residential Proxy</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="security-panel" class="panel">
+          <h2>Sentinel Guard</h2>
+          <div class="security-controls">
+            <div class="control-item">
+              <span>JavaScript</span>
+              <button class="toggle-btn active">ON</button>
+            </div>
+            <div class="control-item">
+              <span>Fingerprint Protection</span>
+              <button class="toggle-btn active">MAX</button>
+            </div>
+            <div class="control-item">
+              <span>Network Isolation</span>
+              <button class="toggle-btn">OFF</button>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>
