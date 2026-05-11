@@ -37,10 +37,22 @@ Full written product requirements and stack decisions are tracked in [docs/VEYRA
 
 - Current prototype: Electron + HTML + CSS + JavaScript
 - Future target:
-  - UI: TypeScript + React
-  - Security and networking modules: Rust
-  - AI layer: TypeScript and/or Python
-  - Long-term engine path: Chromium-based hardened layer
+  - UI and control plane: TypeScript + React
+  - Security, routing, and artifact handling services: Rust
+  - AI and automation: Python plus TypeScript integrations
+  - Browser core: Chromium base with a hardened custom layer in C++
+
+## Realistic Language Split
+
+- `TypeScript + React`: dashboard UI, settings, command palette, AI workspace, persona management
+- `JavaScript`: minimal prototype glue in the current Electron demo
+- `Rust`: download scanning, routing control, isolation policy engine, secure storage helpers
+- `Python`: local AI orchestration, OSINT tools, report generation, YARA- and model-facing workflows
+- `C++`: Chromium-level hardening, sandbox hooks, WebRTC/WebGPU policy, fingerprint surfaces
+- `Go`: enterprise sync, SOC connectors, fleet management, service APIs
+- `C`: only for low-level helpers where platform APIs or legacy libraries require it
+
+Using both React and Angular in the same desktop client is not recommended here. React is the better fit for this product direction because the UI will behave more like a command center than a traditional CRUD dashboard.
 
 ## Getting Started
 

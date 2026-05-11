@@ -32,7 +32,7 @@
               <button id="reload-button" title="Reload">&#8635;</button>
             </div>
             <div id="url-bar-container">
-              <span id="persona-indicator" title="Current Persona">👤 Default</span>
+              <span id="persona-indicator" title="Current Persona">Real Identity</span>
               <input type="text" id="url-input" placeholder="Enter URL or secure search...">
             </div>
             <button id="go-button">Go</button>
@@ -40,8 +40,28 @@
               <option value="casual">Casual Mode</option>
               <option value="hardened">Hardened Mode</option>
               <option value="ghost">Ghost Mode</option>
+              <option value="redteam">Red Team Mode</option>
+              <option value="airgap">Airgap Transfer</option>
             </select>
-            <div id="security-indicator" title="Security Level">🟢 Normal</div>
+            <div id="security-indicator" title="Security Level">Casual</div>
+          </div>
+          <div id="status-strip">
+            <div class="status-chip">
+              <span class="chip-label">Route</span>
+              <strong id="route-indicator">Direct ISP</strong>
+            </div>
+            <div class="status-chip">
+              <span class="chip-label">Storage</span>
+              <strong id="session-indicator">Persistent Vault</strong>
+            </div>
+            <div class="status-chip">
+              <span class="chip-label">Fingerprint</span>
+              <strong id="fingerprint-indicator">Stable Native</strong>
+            </div>
+            <div class="status-chip wide">
+              <span class="chip-label">Mode Profile</span>
+              <strong id="mode-summary">Daily browsing with balanced privacy controls.</strong>
+            </div>
           </div>
           <div id="webview-container">
             <webview id="webview" src="https://www.google.com" partition="persist:default"></webview>
@@ -49,42 +69,67 @@
         </div>
 
         <div id="personas-panel" class="panel">
-          <h2>Digital Personas</h2>
-          <div class="persona-list">
-            <div class="persona-card active" data-persona="default">
-              <h3>Real Identity</h3>
-              <p>Standard ISP, Local Timezone</p>
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">ShadowTabs</p>
+              <h2>Digital Personas</h2>
             </div>
-            <div class="persona-card" data-persona="anon">
-              <h3>Anonymous</h3>
-              <p>VPN/Tor, Random Fingerprint</p>
+            <div id="persona-summary" class="panel-summary"></div>
+          </div>
+          <div id="persona-list" class="persona-list"></div>
+          <div class="persona-matrix">
+            <div class="matrix-card">
+              <span>Cookie Store</span>
+              <strong id="matrix-cookie-store">Isolated</strong>
             </div>
-            <div class="persona-card" data-persona="redteam">
-              <h3>Red Team</h3>
-              <p>Chained Route, Kali Environment</p>
+            <div class="matrix-card">
+              <span>Timezone Profile</span>
+              <strong id="matrix-timezone">Local</strong>
+            </div>
+            <div class="matrix-card">
+              <span>Network Path</span>
+              <strong id="matrix-network">Direct ISP</strong>
+            </div>
+            <div class="matrix-card">
+              <span>AI Memory</span>
+              <strong id="matrix-memory">Scoped to persona</strong>
             </div>
           </div>
         </div>
 
         <div id="ai-panel" class="panel">
-          <h2>ForgeAI Assistant</h2>
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">ForgeAI</p>
+              <h2>Agent Workspace</h2>
+            </div>
+            <div class="panel-summary">Built-in AI for page analysis, routing awareness, and OSINT automation.</div>
+          </div>
           <div id="ai-chat">
             <div id="ai-chat-log" class="chat-log">
-              <div class="message ai">Welcome to ApexForge Veyra. I am ForgeAI. How can I assist your mission today?</div>
+              <div class="message ai">Welcome to ApexForge Veyra. I am ForgeAI. I can analyze pages, review route posture, and assemble quick OSINT briefs for the active persona.</div>
             </div>
             <div class="ai-actions">
               <button id="ai-analyze-btn" class="tool-btn">Analyze Page</button>
+              <button id="ai-risk-btn" class="tool-btn">Phishing Check</button>
+              <button id="ai-osint-btn" class="tool-btn">OSINT Brief</button>
               <button id="ai-clear-btn" class="tool-btn">Clear Logs</button>
             </div>
             <div class="chat-input-area">
-              <input type="text" id="ai-chat-input" placeholder="Ask Veyra...">
+              <input type="text" id="ai-chat-input" placeholder="Ask ForgeAI about the page, persona, security mode, or target...">
               <button id="ai-send-btn">Send</button>
             </div>
           </div>
         </div>
 
         <div id="osint-panel" class="panel">
-          <h2>OSINT Workspace</h2>
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Investigation</p>
+              <h2>OSINT Workspace</h2>
+            </div>
+            <div class="panel-summary">Legal research dashboard for domains, usernames, metadata, and timeline building.</div>
+          </div>
           <div class="osint-input-group">
             <input type="text" id="osint-target" placeholder="Enter domain or username...">
             <button id="osint-scan-btn">Initiate Scan</button>
@@ -100,40 +145,95 @@
         </div>
 
         <div id="network-panel" class="panel">
-          <h2>GhostNet Routing</h2>
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">GhostNet</p>
+              <h2>Routing Control</h2>
+            </div>
+            <div id="route-summary" class="panel-summary"></div>
+          </div>
           <div class="network-map">
             <div class="route-display">
               <div class="node origin">You</div>
               <div class="connection active"></div>
-              <div class="node hop">VPN</div>
+              <div class="node hop" id="route-hop-1">VPN</div>
               <div class="connection"></div>
-              <div class="node hop">Tor</div>
+              <div class="node hop" id="route-hop-2">Tor</div>
               <div class="connection"></div>
               <div class="node target">Internet</div>
             </div>
-            <div class="route-controls">
-              <button class="tool-btn active">Direct (ISP)</button>
-              <button class="tool-btn">VPN Tunnel</button>
-              <button class="tool-btn">Tor Bridge</button>
-              <button class="tool-btn">Residential Proxy</button>
+            <div id="route-controls" class="route-controls"></div>
+          </div>
+          <div class="route-grid">
+            <div class="matrix-card">
+              <span>DNS Policy</span>
+              <strong id="dns-policy">Resolver locked</strong>
+            </div>
+            <div class="matrix-card">
+              <span>WebRTC</span>
+              <strong id="webrtc-policy">Filtered</strong>
+            </div>
+            <div class="matrix-card">
+              <span>Leak Status</span>
+              <strong id="leak-status">No active alert</strong>
+            </div>
+            <div class="matrix-card">
+              <span>Transfer Mode</span>
+              <strong id="transfer-policy">Standard</strong>
             </div>
           </div>
         </div>
 
         <div id="security-panel" class="panel">
-          <h2>Sentinel Guard</h2>
-          <div class="security-controls">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Sentinel Guard</p>
+              <h2>Security Stack</h2>
+            </div>
+            <div class="panel-summary">Threat detection, session isolation, artifact handling, and secure storage status.</div>
+          </div>
+          <div class="module-grid">
+            <div class="module-card">
+              <span>Sentinel Guard</span>
+              <strong>Threat posture engine</strong>
+              <p>Monitors scripts, permission prompts, and risky browsing transitions.</p>
+            </div>
+            <div class="module-card">
+              <span>BlackVault</span>
+              <strong>Encrypted quarantine</strong>
+              <p>Downloads land in a staging vault before release to the host system.</p>
+            </div>
+            <div class="module-card">
+              <span>SpecterScan</span>
+              <strong>Artifact inspection</strong>
+              <p>Planned YARA, entropy, macro, and metadata analysis pipeline.</p>
+            </div>
+            <div class="module-card">
+              <span>NebulaSync</span>
+              <strong>Future secure sync</strong>
+              <p>Persona-aware encrypted settings and session replication.</p>
+            </div>
+          </div>
+          <div id="security-controls" class="security-controls">
             <div class="control-item">
-              <span>JavaScript</span>
-              <button class="toggle-btn active">ON</button>
+              <span>JavaScript Surface</span>
+              <button class="toggle-btn active" data-setting="js">ON</button>
             </div>
             <div class="control-item">
-              <span>Fingerprint Protection</span>
-              <button class="toggle-btn active">MAX</button>
+              <span>Fingerprint Balancing</span>
+              <button class="toggle-btn active" data-setting="fingerprint">MAX</button>
             </div>
             <div class="control-item">
               <span>Network Isolation</span>
-              <button class="toggle-btn">OFF</button>
+              <button class="toggle-btn" data-setting="networkIsolation">OFF</button>
+            </div>
+            <div class="control-item">
+              <span>Artifact Quarantine</span>
+              <button class="toggle-btn active" data-setting="quarantine">ON</button>
+            </div>
+            <div class="control-item">
+              <span>RAM-only Session</span>
+              <button class="toggle-btn" data-setting="ramOnly">OFF</button>
             </div>
           </div>
         </div>
