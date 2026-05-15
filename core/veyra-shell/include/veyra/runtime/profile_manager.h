@@ -4,6 +4,7 @@
 #include "veyra/config/startup_config.h"
 #include "veyra/models/foundation_models.h"
 #include "veyra/runtime/profile_registry.h"
+#include "veyra/runtime/runtime_policy.h"
 #include "veyra/runtime/session_partition.h"
 
 #include <string>
@@ -16,6 +17,7 @@ struct RuntimeProfile {
   SecurityModeDefinition security_mode;
   RouteProfileDefinition route_profile;
   SessionPartition session_partition;
+  RuntimePolicy runtime_policy;
 };
 
 class ProfileManager {

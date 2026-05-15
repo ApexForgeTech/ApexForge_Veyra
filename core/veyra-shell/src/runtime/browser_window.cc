@@ -41,7 +41,9 @@ const TabModel* BrowserWindow::ActiveTab() const {
 
 TabModel& BrowserWindow::OpenTab(const RuntimeProfile& profile, std::string initial_url, std::string title) {
   const std::string tab_id = "tab:" + std::to_string(tabs_.size() + 1);
-  tabs_.emplace_back(tab_id, profile.persona.id, std::move(initial_url), std::move(title));
+  tabs_.emplace_back(tab_id, profile.persona.id, std::move(initial_url), std::move(title),
+                     profile.runtime_policy.history_enabled,
+                     profile.runtime_policy.max_history_entries);
   active_tab_index_ = tabs_.size() - 1;
   return tabs_.back();
 }

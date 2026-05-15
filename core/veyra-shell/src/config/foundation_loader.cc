@@ -1,4 +1,5 @@
 #include "veyra/config/foundation_loader.h"
+#include "veyra/config/schema_validator.h"
 
 #include "veyra/serialization/json.h"
 
@@ -259,6 +260,11 @@ std::vector<Item> LoadArrayFile(const std::string& path,
 LoadResult LoadFoundation(const StartupConfig& config) {
   LoadResult result;
   result.issues = ValidateStartupConfig(config);
+  if (!result.issues.empty()) {
+    return result;
+  }
+
+  result.issues = ValidateSeedDataAgainstSchemas(config);
   if (!result.issues.empty()) {
     return result;
   }

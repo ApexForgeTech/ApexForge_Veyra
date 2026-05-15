@@ -1,4 +1,5 @@
 #include "veyra/config/startup_config.h"
+#include "veyra/runtime/permission_broker.h"
 #include "veyra/runtime/browser_window.h"
 #include "veyra/runtime/profile_manager.h"
 
@@ -54,10 +55,26 @@ int RunBootstrap() {
   std::cout << " - Session partition: " << default_profile->session_partition.id() << "\n";
   std::cout << " - Route profile: " << default_profile->route_profile.display_name << "\n";
   std::cout << " - Security mode: " << default_profile->security_mode.display_name << "\n";
+  std::cout << " - Effective route type: " << default_profile->runtime_policy.route_type << "\n";
+  std::cout << " - DNS policy: " << default_profile->runtime_policy.dns_policy << "\n";
+  std::cout << " - WebRTC policy: " << default_profile->runtime_policy.webrtc_policy << "\n";
+  std::cout << " - Download handling: " << default_profile->runtime_policy.download_policy << "\n";
+  std::cout << " - History retention: "
+            << default_profile->runtime_policy.history_retention_policy << " (max "
+            << default_profile->runtime_policy.max_history_entries << " entries)\n";
   std::cout << " - Primary window id: " << primary_window.id() << "\n";
   std::cout << " - Open tabs: " << primary_window.tabs().size() << "\n";
   if (active_tab != nullptr) {
     std::cout << " - Active tab url: " << active_tab->current_url() << "\n";
+    std::cout << " - Active tab history mode: "
+              << (active_tab->history_enabled() ? "tracked" : "disabled") << "\n";
+  }
+  std::cout << "\n";
+  std::cout << "Permission broker preview.\n";
+  for (const veyra::PermissionEvaluation& evaluation :
+       veyra::BuildPermissionReport(*default_profile)) {
+    std::cout << " - " << veyra::ToString(evaluation.permission) << ": "
+              << veyra::ToString(evaluation.decision) << "\n";
   }
   std::cout << "\n";
   std::cout << "Next milestone: replace bootstrap shell with the real Veyra browser-core integration.\n";

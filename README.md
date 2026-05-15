@@ -176,6 +176,8 @@ The native foundation currently includes:
 
 - repository split toward a core-first architecture
 - formal JSON schemas for personas, routes, and security modes
+- schema-backed startup validation for seed foundation data
+- an initial C++ runtime policy engine and permission-broker layer
 - a buildable C++ shell bootstrap
 - a place to grow toward native engine integration
 

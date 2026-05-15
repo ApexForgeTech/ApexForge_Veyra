@@ -68,11 +68,20 @@ ProfileManagerBootstrapResult BootstrapProfileManager(const StartupConfig& confi
       continue;
     }
 
+    SessionPartition session_partition = SessionPartition::FromPersona(persona);
+    RuntimePolicyBuildResult policy_result =
+        BuildRuntimePolicy(persona, mode_it->second, route_it->second, session_partition);
+    if (!policy_result.issues.empty()) {
+      result.issues.insert(result.issues.end(), policy_result.issues.begin(), policy_result.issues.end());
+      continue;
+    }
+
     runtime_profiles.push_back(RuntimeProfile{
         persona,
         mode_it->second,
         route_it->second,
-        SessionPartition::FromPersona(persona),
+        std::move(session_partition),
+        std::move(policy_result.policy),
     });
   }
 

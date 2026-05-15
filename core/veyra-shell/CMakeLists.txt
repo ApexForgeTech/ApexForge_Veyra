@@ -1,10 +1,13 @@
 add_executable(veyra_shell
   src/config/foundation_loader.cc
+  src/config/schema_validator.cc
   src/config/startup_config.cc
   src/main.cc
   src/runtime/browser_window.cc
+  src/runtime/permission_broker.cc
   src/runtime/profile_manager.cc
   src/runtime/profile_registry.cc
+  src/runtime/runtime_policy.cc
   src/runtime/session_partition.cc
   src/runtime/tab_model.cc
   src/serialization/json.cc
