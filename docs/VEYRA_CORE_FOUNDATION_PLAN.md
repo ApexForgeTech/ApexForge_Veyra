@@ -1,5 +1,32 @@
 # Veyra Core Foundation Plan
 
+## Current Status (as of 2026-06-03)
+
+Foundation phases 0–5 are complete. The browser MVP is delivered.
+
+| Phase | Title | Status |
+|---|---|---|
+| 0 | Direction Freeze | COMPLETE |
+| 1 | Browser Core Foundation (WebKitGTK) | COMPLETE |
+| 2 | Process and Profile Architecture | COMPLETE |
+| 3 | Security Policy Engine | COMPLETE |
+| 4 | Routing Engine (direct / VPN / Tor / I2P / chained) | COMPLETE |
+| 5 | Download Quarantine (BlackVault) | COMPLETE |
+| 6 | Fingerprint Layer | COMPLETE |
+| 7 | Tool Integration Boundary | COMPLETE |
+| 8 | Extension Isolation | COMPLETE |
+| 9 | React UI Layer | COMPLETE |
+| 10 | AI Orchestrator | COMPLETE |
+| 11 | OSINT Workspace | COMPLETE |
+| 12 | Blue Team / Incident Response Workspace | **NEXT** |
+| 8 | Extension Isolation | pending |
+| 9 | React UI Layer | pending |
+| 10 | AI Orchestrator | pending |
+| 11 | OSINT Workspace | pending |
+| 12 | Blue Team / Incident Response Workspace | pending |
+| 13 | Developer Workspace | pending |
+| 14 | MicroVM Research Track | pending |
+
 ## Purpose
 
 This document defines the correct starting point for Veyra if the goal is to build a real browser platform rather than a UI-first prototype.
@@ -384,26 +411,37 @@ schemas/
 
 ## Phased Delivery Plan
 
-### Phase 0: Direction Freeze
+### Phase 0: Direction Freeze `[COMPLETE]`
 
 Decisions:
 
 - stop treating Electron as the long-term core
 - keep the prototype, but label it clearly as prototype-only
 - create a core-first implementation track
-- select the engine integration strategy
+- lock engine integration strategy for Phase 1:
+  - Chromium-based backends are out of scope
+  - Gecko/Firefox-based backends are out of scope
+  - Linux-first backend for Phase 1 is WebKitGTK
 
 Deliverables:
 
 - technical decision record
+- repository artifact: `docs/TDR-0001-engine-strategy.md`
 - repository split plan
 - milestone map
+- repository artifact: `docs/PHASE0_PHASE1_MILESTONE_MAP.md`
 
-### Phase 1: Browser Core Foundation
+Exit criteria:
+
+- TDR merged and referenced by repo docs.
+- `src/` labeled as prototype-only/non-production.
+- `core/` identified as production implementation track.
+
+### Phase 1: Browser Core Foundation `[COMPLETE]`
 
 Tasks:
 
-1. choose the engine backend and integration workflow
+1. implement the locked backend and integration workflow (WebKitGTK, Linux-first)
 2. establish the build environment
 3. bootstrap the Veyra browser shell
 4. run a basic single-window shell
@@ -419,11 +457,18 @@ Deliverables:
 - custom Veyra browser shell branding and runtime boundary
 - working main browser process
 
+Exit criteria:
+
+- native window renders real web content
+- tab creation works
+- navigation works
+- back-forward works
+
 Primary language:
 
 - `C++`
 
-### Phase 2: Process and Profile Architecture
+### Phase 2: Process and Profile Architecture `[COMPLETE]`
 
 Tasks:
 
@@ -438,12 +483,13 @@ Deliverables:
 - persona-backed browsing sessions
 - separate storage partitions
 - ephemeral session teardown
+- repository artifact: `docs/PHASE2_IMPLEMENTATION_NOTES.md`
 
 Primary language:
 
 - `C++`
 
-### Phase 3: Security Policy Engine
+### Phase 3: Security Policy Engine `[COMPLETE]`
 
 Tasks:
 
@@ -458,12 +504,13 @@ Tasks:
 Deliverables:
 
 - real Casual, Hardened, Ghost, Red Team, and Airgap behavior
+- repository artifact: `docs/PHASE3_IMPLEMENTATION_NOTES.md`
 
 Primary language:
 
 - `C++`
 
-### Phase 4: Routing Engine
+### Phase 4: Routing Engine `[COMPLETE]`
 
 Tasks:
 
@@ -478,17 +525,19 @@ Initial target:
 - direct
 - VPN
 - Tor
+- I2P (optional; garlic-routing overlay via local I2P router HTTP proxy)
 - chained
 
 Deliverable:
 
 - real per-persona route control foundation
+- repository artifact: `docs/PHASE4_IMPLEMENTATION_NOTES.md`
 
 Primary language:
 
 - `Rust`
 
-### Phase 5: Download Quarantine
+### Phase 5: Download Quarantine `[COMPLETE]`
 
 Tasks:
 
@@ -509,13 +558,15 @@ Follow-up work:
 Deliverable:
 
 - files do not flow directly to the host by default
+- repository artifact: `docs/PHASE5_IMPLEMENTATION_NOTES.md`
 
-Primary languages:
+Primary language:
 
 - `Rust`
-- `Python`
 
-### Phase 6: Fingerprint Layer
+Note: `Python` was listed here for analysis integrations (YARA, entropy) but was not used in the Phase 5 implementation. Python remains the planned language for follow-up scanning integrations in a later sub-phase.
+
+### Phase 6: Fingerprint Layer `[COMPLETE]`
 
 Tasks:
 
@@ -532,7 +583,7 @@ Primary language:
 
 - `C++`
 
-### Phase 7: Tool Integration Boundary
+### Phase 7: Tool Integration Boundary `[COMPLETE]`
 
 Tasks:
 
@@ -552,7 +603,7 @@ Primary languages:
 - `Rust`
 - `Python`
 
-### Phase 8: Extension Isolation
+### Phase 8: Extension Isolation `[COMPLETE]`
 
 Tasks:
 
@@ -570,7 +621,7 @@ Primary language:
 
 - `C++`
 
-### Phase 9: React UI Layer
+### Phase 9: React UI Layer `[COMPLETE]`
 
 The UI should arrive after the core foundation exists.
 
@@ -592,7 +643,7 @@ Design principle:
 - the UI should control the core
 - the core should not exist as a mock created for the UI
 
-### Phase 10: AI Orchestrator
+### Phase 10: AI Orchestrator `[COMPLETE]`
 
 AI belongs after the browser core, not before it.
 
@@ -617,7 +668,7 @@ Integrations:
 - Ollama
 - optional remote model gateway
 
-### Phase 11: OSINT Workspace
+### Phase 11: OSINT Workspace `[COMPLETE]`
 
 This should follow the AI orchestration layer.
 
@@ -641,7 +692,7 @@ Primary languages:
 - `Python`
 - `TypeScript + React` for the UI surface
 
-### Phase 12: Blue Team and Incident Response Workspace
+### Phase 12: Blue Team and Incident Response Workspace `[pending]`
 
 This track should support:
 
@@ -654,7 +705,7 @@ This track should support:
 
 This is also where evidence-preserving workflows must become first-class rather than incidental.
 
-### Phase 13: Developer Workspace
+### Phase 13: Developer Workspace `[pending]`
 
 This is where Veyra begins to feel like a cyber operating system.
 
@@ -671,7 +722,7 @@ This should not ship before the core security model is credible.
 
 Otherwise, it becomes a fancy dashboard rather than a serious platform.
 
-### Phase 14: MicroVM Research Track
+### Phase 14: MicroVM Research Track `[pending]`
 
 This should not be part of the MVP.
 
@@ -702,16 +753,16 @@ The following should not lead the implementation:
 
 The correct build order is:
 
-1. browser shell
-2. process and profile model
-3. persona partitions
-4. security modes
-5. routing
-6. quarantine
+1. browser shell `[DONE]`
+2. process and profile model `[DONE]`
+3. persona partitions `[DONE]`
+4. security modes `[DONE]`
+5. routing `[DONE]`
+6. quarantine `[DONE]`
 
 Only after that:
 
-7. UI panels
+7. UI panels `[NEXT]`
 8. AI assistant
 9. OSINT workspace
 10. deep tool integrations
@@ -720,17 +771,19 @@ Only after that:
 
 A credible browser MVP for Veyra is:
 
-1. native custom shell
-2. multi-persona profile partitions
-3. persistent and ephemeral session handling
-4. security mode engine
-5. permission broker
-6. download quarantine
-7. route profile switching
+1. native custom shell `[DONE]`
+2. multi-persona profile partitions `[DONE]`
+3. persistent and ephemeral session handling `[DONE]`
+4. security mode engine `[DONE]`
+5. permission broker `[DONE]`
+6. download quarantine `[DONE]`
+7. route profile switching `[DONE]`
 
-Only after those foundations:
+**The browser MVP core is complete as of Phase 5.**
 
-8. React dashboard
+Post-MVP track:
+
+8. React dashboard `[NEXT after Phase 6]`
 9. AI assistant
 10. OSINT workspace
 11. advanced tool integrations
@@ -764,67 +817,162 @@ Reason:
 - they do not fit the browser-core problem as directly
 - they add unnecessary architectural fragmentation
 
-## First 90-Day Execution Map
+## Completed Execution Map (Phase 0–5)
 
-### Days 1-10
+All foundation phases are delivered. The following work is done:
 
-- freeze architecture direction
-- restructure the repository
-- choose engine integration workflow
-- prepare the build environment
+- architecture direction frozen (Phase 0)
+- repository restructured into prototype and core-foundation tracks (Phase 0)
+- WebKitGTK engine integration operational (Phase 1)
+- native window, tab creation, navigation, back-forward working (Phase 1)
+- persona schema, security mode schema, route profile schema formalized (Phase 2)
+- profile manager and persona partition lifecycle implemented (Phase 2)
+- security mode registry and permission broker implemented (Phase 3)
+- JavaScript, cookie, WebRTC, TLS, and navigation policies enforced (Phase 3)
+- Rust route engine IPC operational (Phase 4)
+- VPN, Tor, chained, and I2P route types supported (Phase 4)
+- route override persistence and audit logging working (Phase 4)
+- BlackVault download quarantine with static heuristic scanning (Phase 5)
+- SHA-256 / SHA-1 hashing, MIME detection, and risk scoring (Phase 5)
+- controlled release review before artifacts leave quarantine (Phase 5)
 
-### Days 11-25
+## Completed Execution Sprint (Phase 6: Fingerprint Layer)
 
-- bootstrap the custom shell
-- implement basic window and tab lifecycle
-- support navigation
+Phase 6 is implemented. The following work is done:
 
-### Days 26-40
+- fingerprint profile schema (`schemas/fingerprint/fingerprint-profile.schema.json`)
+- four shipped fingerprint profiles: `native_stable`, `balanced_stealth`, `low_noise_obfuscated`, `minimal_surface`
+- `FingerprintProfileDefinition` added to `FoundationState` and loaded at startup
+- `fingerprint_profile_id` reference validation in `profile_registry.cc`
+- `FingerprintPolicy` and `FingerprintEngine` in `core/veyra-shell/src/runtime/fingerprint_engine.cc`
+- per-session canvas noise via seeded xorshift32 PRNG (deterministic, stable within a session)
+- WebGL `getParameter` override for VENDOR, RENDERER, UNMASKED_VENDOR_WEBGL, UNMASKED_RENDERER_WEBGL
+- AudioContext `getFloatFrequencyData` and `getByteFrequencyData` noise injection
+- navigator property overrides: hardwareConcurrency, deviceMemory, platform
+- screen metrics overrides: width, height, availHeight, colorDepth, pixelDepth, devicePixelRatio
+- JavaScript injected at `WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START` in all frames
+- fingerprint script rebuilt on hot-route reconfigure via `ApplySecurityPolicy`
+- `fingerprint_profile_id` and `fingerprint_script_injected` in security-policy reports
+- `docs/PHASE6_IMPLEMENTATION_NOTES.md` published
 
-- build the profile system
-- add persona partitions
-- add ephemeral session behavior
+## Completed Execution Sprint (Phase 7: Tool Integration Boundary)
 
-### Days 41-55
+Phase 7 is implemented. The following work is done:
 
-- build the security mode registry
-- add permission brokering
-- add WebRTC policy
-- add cookie policy
+- tool definition schema (`schemas/integration/tool.schema.json`)
+- 7 pre-defined tools: `whois`, `dig`, `nmap-quick`, `curl-fetch`, `file-inspect`, `strings-extract`, `openssl-x509`
+- `ToolDefinition` model loaded into `FoundationState` and `ProfileManager`
+- unique ID validation in `profile_registry.cc`
+- Rust `tool-bridge` service (`core/tool-bridge/src/main.rs`) with stdio IPC: INVOKE, STATUS, CANCEL, SHUTDOWN
+- per-tool timeout enforcement (configurable `max_runtime_seconds`)
+- stdout/stderr capture and per-line OUTPUT streaming back to C++ shell
+- `ToolBridgeClient` C++ class with `CheckPolicy`, `Invoke`, audit logging, quarantine routing
+- 5-rule policy evaluation: tool registry check, allowed personas, denied personas, denied security modes, network + isolation mode check
+- per-invocation JSONL audit events appended to session `events.jsonl`
+- tool output quarantine routing for `output_to_quarantine=true` tools
+- CLI flags `--invoke-tool=<tool_id>:<args>` and `--list-tools`
+- `tool_count` in `RegistrySummary` and bootstrap output
+- `docs/PHASE7_IMPLEMENTATION_NOTES.md` published
 
-### Days 56-70
+## Completed Execution Sprint (Phase 8: Extension Isolation)
 
-- ship the Rust routing service
-- bind personas to routes
-- add route and leak status reporting
+Phase 8 is implemented. The following work is done:
 
-### Days 71-85
+- extension policy schema (`schemas/extension/extension-policy.schema.json`)
+- 3 extension policies: `trusted_daily`, `minimal_locked`, `strict_redteam`
+- `ExtensionPolicyDefinition` loaded into `FoundationState`; `extension_policy_id` validated in registry
+- `ExtensionPolicy` runtime struct with 5 policy fields and pre-built eval-block script
+- `extension_engine.cc`: `BuildExtensionPolicy`, `BuildEvalBlockScript`, `IsBlockedDomain` (subdomain-aware)
+- eval/Function/setTimeout/setInterval blocking via document-start IIFE injected in ALL frames
+- domain navigation blocking in `ShouldAllowNavigation` using `IsBlockedDomain`
+- mixed content enforcement via `webkit_settings_set_allow_running_insecure_content` and `webkit_settings_set_allow_displaying_insecure_content`
+- extension policy script injected per-tab at `CreateTab`; cleared and rebuilt on hot-route reconfigure
+- 11 domains blocked for `minimal_locked`; 26 domains blocked for `strict_redteam`
+- security-policy JSON report includes 7 extension policy fields
+- `extension_policy_count` in `RegistrySummary` and bootstrap output
+- `docs/PHASE8_IMPLEMENTATION_NOTES.md` published
 
-- implement quarantine pipeline
-- add controlled release flow
-- add risk summary output
+## Completed Execution Sprint (Phase 9: React UI Layer)
 
-### Days 86-90
+Phase 9 is implemented. The following work is done:
 
-- run the first internal MVP review
-- perform threat-model review
-- correct architectural weaknesses
+- `apps/shell-ui/` TypeScript + React + Vite app scaffolded and fully written
+- 5 panels: Personas, GhostNet Route, Sentinel Guard, BlackVault, Tool Bridge
+- Command palette (Ctrl+K) with fuzzy search across route switch, tool invoke, browser actions
+- Dark cyberpunk CSS theme matching Veyra branding (`#070c14` base, `#2aa6ff` accent)
+- `VeyraState` TypeScript types with full persona, route, permission, vault, and tool data
+- `window.__VEYRA_STATE__` injection at document-start before React boots
+- `window.webkit.messageHandlers.veyra.postMessage(...)` for C++-bound actions
+- `window.__VEYRA_UPDATE__(state)` function for C++ to push refreshed state
+- `shell_ui_bridge.h/.cc`: `SerializeDashboardState`, `BuildStateInjectionScript`, `ParseDashboardAction`
+- `WebKitGtkBrowserEngine`: GtkPaned sidebar (300px), ephemeral dashboard WebView, `veyra` message handler
+- `PushDashboardState` — calls `window.__VEYRA_UPDATE__` after route switch or tool invocation
+- `on_dashboard_action` callback in `main.cc`: switch_route, invoke_tool, open_tab, request_state_refresh
+- `--shell-ui-path=<dist/>` CLI flag to activate the dashboard panel
+- CMake npm build step (`find_program(NPM_EXECUTABLE npm)`)
+- `docs/PHASE9_IMPLEMENTATION_NOTES.md` published
 
-## First Coding Sprint
+## Completed Execution Sprint (Phase 10: AI Orchestrator)
 
-If the team follows this plan, the first sprint should focus on:
+Phase 10 is implemented. The following work is done:
 
-1. separating the Electron prototype as explicitly prototype-only
-2. creating the new `core/` structure
-3. writing the browser-shell bootstrap plan and build files
-4. formalizing the persona schema
-5. formalizing the security mode schema
-6. formalizing the route profile schema
-7. scaffolding the C++ shell entrypoint
+- `agents/ai-orchestrator/veyra_ai_orchestrator.py` — stdlib-only Python sidecar, JSONL over stdio
+- Local-first Ollama integration via `urllib` (no pip dependencies)
+- `summarize`, `phishing_check`, `explain_script`, `ping` methods
+- Offline phishing heuristics (IP host, punycode, brand-in-subdomain, suspicious TLD, login-over-HTTP, …) that work with no model
+- Graceful degradation when Ollama is offline (verified: 404/offline → fallback, never crashes)
+- `schemas/ai/ai-policy.schema.json` + `default-ai-policies.json` (ai_full, ai_scoped, ai_restricted, ai_disabled)
+- Per-persona `ai_policy_id` added to persona schema + all 4 seed personas
+- `AiPolicyDefinition` threaded through foundation_models → loader → registry validation → profile_manager → RuntimeProfile
+- `AiOrchestratorClient` (C++): forks Python per-call, JSONL stdio, enforces policy (allow_page_content, allow_script_analysis, allow_phishing_check) before sending content
+- `RequestActiveTabText` async JS extraction (`document.body.innerText`) for summarization
+- `GetActiveTabUrl` / `GetActiveTabTitle` for phishing checks
+- Dashboard action handlers: `ai_summarize`, `ai_phishing_check`, `ai_explain_script` in main.cc
+- `AiResultSnapshot` serialized into dashboard state; results pushed back via `PushDashboardState`
+- React `AiPanel.tsx` — Cortex AI tab: policy posture, Summarize/Phishing buttons, script textarea, result card with risk badges
+- Command palette AI commands (summarize / phishing) gated on policy
+- `--ai-orchestrator-script=` and `--ai-python=` CLI flags
+- CMake stages the Python script next to the shell binary
+- Full C++ build verified (compiles + links against WebKitGTK 2.50); React app builds (tsc + vite); end-to-end summarize verified against a real local model
+- `docs/PHASE10_IMPLEMENTATION_NOTES.md` published
+
+## Completed Execution Sprint (Phase 11: OSINT Workspace)
+
+Phase 11 is implemented. The following work is done:
+
+- `agents/osint-workspace/veyra_osint_workspace.py` — stdlib-only Python sidecar, JSONL over stdio
+- Route-honouring network layer: in-file SOCKS5 (Tor, remote DNS via ATYP=domain), HTTP proxy CONNECT (I2P), direct
+- Leak prevention: `ensure_egress_allowed` refuses lookups when `require_route` and no proxy is active
+- DNS via DoH (Cloudflare JSON) through the route — no system-resolver leak
+- Modules: `whois_lookup` (IANA → registry refer), `dns_lookup` (A/AAAA/MX/NS/TXT), `archive_lookup` (Wayback CDX), `username_search` (curated ~15 sites)
+- `schemas/osint/osint-policy.schema.json` + `default-osint-policies.json` (osint_full, osint_passive, osint_operational, osint_disabled)
+- Per-persona `osint_policy_id` added to persona schema + all 4 seed personas
+- `OsintPolicyDefinition` threaded through foundation_models → loader → registry validation → profile_manager → RuntimeProfile
+- `OsintWorkspaceClient` (C++): forks Python per-call, JSONL stdio, SIGPIPE-safe + poll-bounded IO, client-side module policy gate
+- Investigation case model (`OsintCaseSnapshot`): entities deduped by type+value, relationships by from+to+kind, timeline appended; owned by the shell
+- Dashboard actions: `osint_whois`, `osint_dns`, `osint_archive`, `osint_username`, `osint_clear`; live route resolved per action
+- React `OsintPanel.tsx` — Recon tab: target input, module buttons, egress posture badge, entity list, timeline
+- Command palette `osint_clear` command gated on an active case
+- `--osint-workspace-script=` CLI flag; CMake stages the Python script
+- Full C++ build verified (WebKitGTK 2.50); React builds (41 modules); leak guard + policy gate + ping verified end-to-end through C++; SIGPIPE-safe
+- `docs/PHASE11_IMPLEMENTATION_NOTES.md` published
+
+## Next Execution Sprint (Phase 12: Blue Team / Incident Response Workspace)
+
+The next sprint should focus on:
+
+1. scaffold `agents/blueteam-workspace/` Python project
+2. IOC enrichment (hashes, IPs, domains) reusing the routed network layer from Phase 11
+3. a local indicator store (sightings, verdicts) scoped per persona
+4. log/artefact triage helpers that route through BlackVault (Phase 5) and Tool Bridge (Phase 7)
+5. a React `Blue Team` panel surfacing indicators, verdicts, and a triage queue
+6. all egress route-locked exactly as OSINT (no leaks via direct ISP)
+
+Primary language: `Python` (workspace), `TypeScript` (React panel), `C++` (bridge)
 
 Sprint goal:
 
-- move the repository from prototype thinking to real browser-foundation thinking
+- deliver a defensive triage workspace — persona-scoped IOC enrichment and artefact analysis that never leaks outside the active route
 
 ## Final Recommendation
 
@@ -844,18 +992,19 @@ The clearest summary is:
 
 ## Next Practical Step
 
-The next technically correct step is:
+The next technically correct step is Phase 6: Fingerprint Layer.
 
-1. split the repository into prototype and core-foundation tracks
-2. create the `core/` area for the C++ browser shell
-3. move persona, mode, and route models into formal schemas
-4. define Rust service boundaries before implementation begins
+The foundation is complete. What is missing before a credible security product can be claimed is:
 
-The principle is:
+1. anti-fingerprinting policy engine (Phase 6) — without this, persona separation leaks through canvas/GPU/audio surfaces
+2. React control-plane UI (Phase 9) — without this, operators cannot manage personas, routes, or vault state through a real UI
+3. AI orchestrator (Phase 10) — post-UI, local model integration for page analysis and phishing hints
 
-- foundation first
-- compartments second
-- security third
-- routing fourth
-- vault fifth
-- AI and workspace last
+The principle remains:
+
+- fingerprint hardening before UI
+- UI before AI
+- AI before OSINT workspace
+- OSINT workspace before Blue Team workspace
+- Blue Team workspace before Developer workspace
+- MicroVM research is always a separate optional track

@@ -10,21 +10,35 @@
 
 namespace veyra {
 
+struct RouteRuntimeState;
+
 class BrowserWindow {
  public:
   BrowserWindow(std::string id, std::string title);
 
-  static BrowserWindow CreatePrimaryWindow(const RuntimeProfile& profile);
+  static BrowserWindow CreatePrimaryWindow(const RuntimeProfile& profile,
+                                           const RouteRuntimeState& route_state,
+                                           std::string initial_url = "https://example.org");
 
   const std::string& id() const;
   const std::string& title() const;
   const std::vector<TabModel>& tabs() const;
   const TabModel* ActiveTab() const;
+  TabModel* ActiveTabMutable();
+  const std::string* ActiveTabId() const;
 
-  TabModel& OpenTab(const RuntimeProfile& profile, std::string initial_url, std::string title);
+  TabModel& OpenTab(const RuntimeProfile& profile,
+                    const RouteRuntimeState& route_state,
+                    std::string initial_url,
+                    std::string title);
   bool ActivateTab(std::size_t index);
+  bool ActivateTabById(const std::string& tab_id);
+  bool SyncTabFromEngine(const std::string& tab_id, std::string url, std::string title);
+  bool ApplyRouteStateToProfileTabs(const std::string& profile_id, const RouteRuntimeState& route_state);
 
  private:
+  TabModel* FindTabById(const std::string& tab_id);
+
   std::string id_;
   std::string title_;
   std::vector<TabModel> tabs_;

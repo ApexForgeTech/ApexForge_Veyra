@@ -14,6 +14,8 @@
     "locale_profile",
     "extension_policy_id",
     "ai_memory_scope",
+    "ai_policy_id",
+    "osint_policy_id",
     "security_mode",
     "ephemeral"
   ],
@@ -51,6 +53,14 @@
       "minLength": 1
     },
     "ai_memory_scope": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ai_policy_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "osint_policy_id": {
       "type": "string",
       "minLength": 1
     },

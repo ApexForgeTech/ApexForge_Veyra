@@ -52,5 +52,19 @@
       "target"
     ],
     "notes": "Stacked route for higher-risk workflows."
+  },
+  {
+    "id": "i2p_network",
+    "display_name": "I2P Network",
+    "route_type": "i2p",
+    "dns_policy": "proxy_bound",
+    "webrtc_policy": "disable",
+    "leak_prevention_level": "maximum",
+    "hops": [
+      "i2p_client",
+      "i2p_relay",
+      "i2p_destination"
+    ],
+    "notes": "I2P garlic-routing overlay. Optional; requires a local I2P router on 127.0.0.1:4444."
   }
 ]

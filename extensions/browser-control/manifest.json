@@ -1,0 +1,18 @@
+{
+  "id": "veyra.browser-control",
+  "name": "Veyra Browser Control",
+  "version": "2.0.0",
+  "description": "Built-in automation and control surface for the Veyra shell. Exposes window.__VEYRA_CONTROL__ in every page for DOM query, click, form fill, scroll, and select operations driven over the shell control channel.",
+  "author": "ApexForge Veyra",
+  "default_enabled": true,
+  "trusted": true,
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["control.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "permissions": ["dom", "forms", "navigation", "automation"]
+}

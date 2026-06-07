@@ -138,7 +138,7 @@ const PERSONAS = [
 const SECURITY_MODES = {
   casual: {
     label: 'Casual',
-    color: '#00ff9d',
+    color: 'var(--accent-success)',
     summary: 'Daily browsing with balanced privacy controls.',
     dns: 'System resolver',
     webrtc: 'Allowed with warnings',
@@ -147,7 +147,7 @@ const SECURITY_MODES = {
   },
   hardened: {
     label: 'Hardened',
-    color: '#ffd447',
+    color: 'var(--accent-warning)',
     summary: 'Strict tracking resistance, tighter cookies, and safer defaults.',
     dns: 'Isolated resolver',
     webrtc: 'Constrained',
@@ -156,7 +156,7 @@ const SECURITY_MODES = {
   },
   ghost: {
     label: 'Ghost',
-    color: '#dce6ff',
+    color: 'var(--accent-secondary)',
     summary: 'Ephemeral memory, automatic cleanup, and minimal retention.',
     dns: 'Ephemeral resolver',
     webrtc: 'Disabled',
@@ -165,7 +165,7 @@ const SECURITY_MODES = {
   },
   redteam: {
     label: 'Red Team',
-    color: '#ff6b57',
+    color: 'var(--accent-danger)',
     summary: 'High-scrutiny route posture with maximum compartmentalization.',
     dns: 'Proxy-bound resolver',
     webrtc: 'Killed',
@@ -174,7 +174,7 @@ const SECURITY_MODES = {
   },
   airgap: {
     label: 'Airgap Transfer',
-    color: '#7dd3fc',
+    color: 'var(--accent-color)',
     summary: 'Files move through analysis and metadata stripping before host release.',
     dns: 'Analysis-only path',
     webrtc: 'Disabled',
@@ -559,7 +559,7 @@ function renderOSINTScan() {
       <div>Social footprint hints detected across 3 likely profiles.</div>
       <div>Metadata workflow ready for BlackVault transfer.</div>
       <br>
-      <div style="color: #ffd447;">[!] Note: this is a legal research mockup, not an active collection engine.</div>
+      <div style="color: var(--accent-warning);">[!] Note: this is a legal research mockup, not an active collection engine.</div>
     `;
   }, 1100);
 }
@@ -597,10 +597,10 @@ function renderDnsMap() {
 }
 
 function renderMetadataFlow() {
-  osintResults.innerHTML = '<div style="color: #ffd447;">[SYSTEM] SpecterScan staging artifact for metadata stripping and entropy review...</div>';
+  osintResults.innerHTML = '<div style="color: var(--accent-warning);">[SYSTEM] SpecterScan staging artifact for metadata stripping and entropy review...</div>';
   setTimeout(() => {
     osintResults.innerHTML =
-      "<div style=\"color: #00ff9d;\">[SUCCESS] Metadata stripped from 'evidence.jpg'. Artifact moved to BlackVault quarantine and marked ready for controlled release.</div>";
+      "<div style=\"color: var(--accent-success);\">[SUCCESS] Metadata stripped from 'evidence.jpg'. Artifact moved to BlackVault quarantine and marked ready for controlled release.</div>";
   }, 900);
 }
 

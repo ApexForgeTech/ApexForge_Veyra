@@ -313,6 +313,15 @@ std::vector<ValidationIssue> ValidateSeedDataAgainstSchemas(const StartupConfig&
   ValidateSeedFile(config.persona_schema_path, config.seed_personas_path, &issues);
   ValidateSeedFile(config.security_mode_schema_path, config.seed_security_modes_path, &issues);
   ValidateSeedFile(config.route_profile_schema_path, config.seed_route_profiles_path, &issues);
+  ValidateSeedFile(config.fingerprint_profile_schema_path,
+                   config.seed_fingerprint_profiles_path, &issues);
+  ValidateSeedFile(config.extension_policy_schema_path,
+                   config.seed_extension_policies_path, &issues);
+  ValidateSeedFile(config.ai_policy_schema_path,
+                   config.seed_ai_policies_path, &issues);
+  ValidateSeedFile(config.osint_policy_schema_path,
+                   config.seed_osint_policies_path, &issues);
+  ValidateSeedFile(config.tool_schema_path, config.seed_tools_path, &issues);
 
   return issues;
 }

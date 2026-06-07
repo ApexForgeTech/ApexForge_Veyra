@@ -12,3 +12,8 @@ Planned responsibilities:
 - shell-to-engine boundary design
 - security hardening hooks
 - build instructions for the real browser core
+
+Phase 1 decision freeze:
+
+- Linux-first engine backend is WebKitGTK.
+- Chromium-based and Gecko/Firefox-based backends are out of scope for Phase 1.

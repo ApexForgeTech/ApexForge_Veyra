@@ -9,7 +9,6 @@ PermissionDecision DecideByPermissionPolicy(const std::string& permission_policy
                                             PermissionKind permission) {
   if (permission_policy == "prompt") {
     switch (permission) {
-      case PermissionKind::kNotifications:
       case PermissionKind::kFullscreen:
         return PermissionDecision::kAllow;
       case PermissionKind::kUsb:

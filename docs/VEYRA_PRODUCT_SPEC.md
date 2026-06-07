@@ -232,27 +232,21 @@ The guiding rule is simple:
 
 ### Security Modes
 
-Recommended modes:
+**Implemented modes** (in `schemas/policy/security-mode.schema.json`):
 
-- Casual
-- Hardened
-- Ghost
-- Red Team
-- Blue Team
-- Investigation
-- Malware Analysis
-- Airgap Transfer
+- `Casual` — balanced defaults for daily browsing
+- `Hardened` — stricter tracking resistance and permission behavior
+- `Ghost` — RAM-only, low-retention, auto-cleanup session behavior
+- `Red Team` — higher scrutiny, stronger route discipline, stronger leak prevention; JavaScript disabled
+- `Airgap Transfer` — controlled file handoff and analysis-first workflow
 
-Intended behavior:
+**Planned modes** (not yet in schema; require Phase 3 expansion):
 
-- `Casual`: balanced defaults for daily browsing
-- `Hardened`: stricter tracking resistance and permission behavior
-- `Ghost`: RAM-only, low-retention, auto-cleanup session behavior
-- `Red Team`: higher scrutiny, stronger route discipline, stronger leak prevention
-- `Blue Team`: evidence-safe investigation with stricter logging and artifact handling
-- `Investigation`: research-oriented evidence collection and pivot workflow
-- `Malware Analysis`: stronger download isolation and hostile-content handling
-- `Airgap Transfer`: controlled file handoff and analysis-first workflow
+- `Blue Team` — evidence-safe investigation with stricter logging and artifact handling
+- `Investigation` — research-oriented evidence collection and pivot workflow
+- `Malware Analysis` — stronger download isolation and hostile-content handling
+
+When adding planned modes, extend the `id` enum in `schemas/policy/security-mode.schema.json` and add seed entries in `schemas/policy/default-security-modes.json` before using them in personas.
 
 ### Built-in AI
 
@@ -292,12 +286,21 @@ Required route options:
 - direct ISP
 - VPN
 - Tor
+- I2P (optional, garlic-routing overlay; requires a local I2P router)
 - residential proxy
 - chained route
 
 Important implementation note:
 
 True per-tab route isolation is significantly harder than UI mockups suggest. For MVP, per-persona route control is the more realistic target.
+
+I2P notes:
+
+- I2P requires a separately installed and running I2P router (`i2pd` or the Java I2P client).
+- Veyra routes I2P-persona traffic through the local I2P HTTP proxy on `127.0.0.1:4444`.
+- `.i2p` eepsite navigation is gated: only allowed when the active persona uses an I2P route.
+- HTTPS to `.i2p` domains is blocked (eepsites are HTTP-only by design; transport security is at the I2P layer).
+- Clearnet navigation through I2P outproxies is supported but intentionally slower.
 
 ### OSINT Workspace
 
@@ -378,42 +381,50 @@ The developer and operator workspace should eventually support:
 
 ## MVP Scope
 
-The MVP should remain disciplined.
+**The core browser MVP is complete** (foundation Phases 0–5 delivered).
 
-A credible MVP includes:
+What is delivered:
 
-- native desktop browser shell
-- persona-based storage partitions
-- security mode switching
-- route presets
-- artifact quarantine
-- phishing and download warnings
-- basic AI assistance
+- native desktop browser shell (WebKitGTK, Linux-first) `[DONE]`
+- persona-based storage partitions (persistent and ephemeral) `[DONE]`
+- security mode switching (Casual, Hardened, Ghost, Red Team, Airgap) `[DONE]`
+- route presets (direct, VPN, Tor, I2P, chained) `[DONE]`
+- artifact quarantine (BlackVault with static heuristics and controlled release) `[DONE]`
+- permission broker for all sensitive permissions `[DONE]`
+
+What still belongs to the post-MVP track:
+
+- phishing and download warnings with AI-powered analysis
+- basic AI assistance (local LLM)
 - basic OSINT workspace
 - initial tool-integration boundaries
+- React control-plane UI
 
-It should not attempt to deliver every advanced idea at once.
+## Post-MVP Phases
 
-## Later Phases
+### Immediate Next: Hardening Track
 
-### Phase 2
+- anti-fingerprint engine (canvas, audio, GPU, font, screen, timezone) — **Phase 6 NEXT**
+- deeper download scanning (YARA, entropy, macro, EXIF) — Phase 5 follow-up
+- persona-specific extension policies — Phase 8
+- deeper permission mediation and centralized prompt management
 
-- stronger anti-fingerprint engine
-- real download scanning service integrations
-- deeper permission mediation
-- persona-specific extension policies
-- local LLM orchestration with memory boundaries
+### UI and Intelligence Track
 
-### Phase 3
+- React control-plane UI (command palette, persona manager, route manager, vault monitor) — Phase 9
+- local LLM orchestration with Ollama integration and persona-scoped memory — Phase 10
+- OSINT workspace (WHOIS, DNS map, archive lookup, timeline builder) — Phase 11
 
-- browser-core hardening layer
-- deeper network stack control
-- enterprise policy distribution
-- secure sync
-- advanced SOC connectors
+### Operational Track
 
-### Phase 4
+- Blue Team workspace: IOC enrichment, alert pivoting, evidence review — Phase 12
+- Developer workspace: terminal, git, SSH, API testing — Phase 13
+- Enterprise: Go-based control plane, fleet management, SOC connectors
 
+### Research Track
+
+- browser-core hardening layer and deeper network stack control
+- enterprise policy distribution and secure sync
 - microVM-backed browsing for selected workflows
 - stronger hardware-backed secrets
 - post-quantum experiments

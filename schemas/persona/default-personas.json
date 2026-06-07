@@ -9,6 +9,8 @@
     "locale_profile": "system-default",
     "extension_policy_id": "trusted_daily",
     "ai_memory_scope": "persona:real_identity",
+    "ai_policy_id": "ai_full",
+    "osint_policy_id": "osint_full",
     "security_mode": "casual",
     "ephemeral": false,
     "notes": "Default daily-use persona."
@@ -23,6 +25,8 @@
     "locale_profile": "generic-en",
     "extension_policy_id": "minimal_locked",
     "ai_memory_scope": "persona:anonymous",
+    "ai_policy_id": "ai_scoped",
+    "osint_policy_id": "osint_passive",
     "security_mode": "ghost",
     "ephemeral": true,
     "notes": "Ephemeral research persona."
@@ -37,8 +41,26 @@
     "locale_profile": "operator-controlled",
     "extension_policy_id": "strict_redteam",
     "ai_memory_scope": "persona:red_team",
+    "ai_policy_id": "ai_restricted",
+    "osint_policy_id": "osint_operational",
     "security_mode": "redteam",
     "ephemeral": true,
     "notes": "High-isolation operational persona."
+  },
+  {
+    "id": "i2p_research",
+    "display_name": "I2P Research",
+    "storage_partition": "memory:i2p_research",
+    "route_profile_id": "i2p_network",
+    "fingerprint_profile_id": "balanced_stealth",
+    "timezone_profile": "utc_generic",
+    "locale_profile": "generic-en",
+    "extension_policy_id": "minimal_locked",
+    "ai_memory_scope": "persona:i2p_research",
+    "ai_policy_id": "ai_scoped",
+    "osint_policy_id": "osint_passive",
+    "security_mode": "ghost",
+    "ephemeral": true,
+    "notes": "I2P garlic-routing research persona. Requires a local I2P router. Optional route."
   }
 ]

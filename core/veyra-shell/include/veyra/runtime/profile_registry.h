@@ -14,6 +14,11 @@ struct RegistrySummary {
   std::size_t persona_count = 0;
   std::size_t security_mode_count = 0;
   std::size_t route_profile_count = 0;
+  std::size_t fingerprint_profile_count = 0;
+  std::size_t extension_policy_count = 0;
+  std::size_t ai_policy_count = 0;
+  std::size_t osint_policy_count = 0;
+  std::size_t tool_count = 0;
 };
 
 struct RegistryBootstrapResult {

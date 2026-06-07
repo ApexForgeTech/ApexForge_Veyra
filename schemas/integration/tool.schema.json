@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apexforge.local/schemas/tool.schema.json",
+  "title": "Veyra Tool Definition",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "display_name",
+    "category",
+    "binary_path",
+    "max_runtime_seconds",
+    "output_to_quarantine",
+    "requires_network",
+    "audit_level"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "category": {
+      "type": "string",
+      "enum": ["network_scan", "osint", "web", "crypto", "forensics", "general"]
+    },
+    "binary_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "allowed_personas": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "denied_personas": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "denied_security_modes": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "max_runtime_seconds": {
+      "type": "number"
+    },
+    "output_to_quarantine": {
+      "type": "boolean"
+    },
+    "requires_network": {
+      "type": "boolean"
+    },
+    "audit_level": {
+      "type": "string",
+      "enum": ["minimal", "standard", "full"]
+    },
+    "notes": {
+      "type": "string"
+    }
+  }
+}

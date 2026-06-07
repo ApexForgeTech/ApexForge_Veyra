@@ -12,7 +12,7 @@ cmake-build-*/
 *.a
 *.lib
 *.exe
-
+ctd/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -28,3 +28,35 @@ Thumbs.db
 
 coverage/
 .cache/
+
+# CMake in-source build artifacts (prefer out-of-source build/, but ignore strays)
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+/Makefile
+core/veyra-shell/Makefile
+*.cmake.stamp
+compile_commands.json
+
+# Rust / Cargo (Cargo.lock IS committed — these are binaries, not libraries)
+target/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+
+# Veyra runtime sessions, profiles, quarantine (generated at run time)
+.veyra/
+*.sqlite
+*.sqlite-journal
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp

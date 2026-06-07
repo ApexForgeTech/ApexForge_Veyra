@@ -29,7 +29,8 @@
         "vpn",
         "tor",
         "residential_proxy",
-        "chained"
+        "chained",
+        "i2p"
       ]
     },
     "dns_policy": {

@@ -1,0 +1,8 @@
+[package]
+name = "veyra-tool-bridge"
+version = "0.7.0"
+edition = "2021"
+
+[[bin]]
+name = "tool_bridge"
+path = "src/main.rs"

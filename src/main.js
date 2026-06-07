@@ -5,6 +5,8 @@ const path = require('path');
 const fingerprintShieldPath = path.join(__dirname, 'fingerprint-shield.js');
 const fingerprintShieldSource = fs.readFileSync(fingerprintShieldPath, 'utf8');
 
+console.warn('[Veyra Prototype] Electron track is prototype-only and non-production.');
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1400,
