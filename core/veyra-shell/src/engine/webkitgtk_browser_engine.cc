@@ -4,6 +4,7 @@
 #include "veyra/runtime/extension_engine.h"
 #include "veyra/runtime/shell_ui_bridge.h"
 
+#include <gdk/gdkkeysyms.h>
 #include <gtk/gtk.h>
 #include <webkit2/webkit2.h>
 
@@ -41,6 +42,12 @@ struct DownloadArtifactRecord {
   bool failed = false;
 };
 
+// Per-tab chrome widgets living inside the notebook tab label.
+struct TabChrome {
+  GtkWidget* spinner = nullptr;
+  GtkWidget* title_label = nullptr;
+};
+
 struct WebKitGtkRuntimeState {
   WebKitGtkBrowserEngine* owner = nullptr;
   GtkWidget* window = nullptr;
@@ -51,6 +58,14 @@ struct WebKitGtkRuntimeState {
   GtkWidget* address_entry = nullptr;
   GtkWidget* back_button = nullptr;
   GtkWidget* forward_button = nullptr;
+  GtkWidget* reload_button = nullptr;
+  GtkWidget* panel_menu_item = nullptr;
+  GtkCssProvider* theme_provider = nullptr;
+  std::string theme_id = "veyra-dark";
+  std::string search_engine_id = "duckduckgo";
+  bool dashboard_visible = false;
+  std::string base_window_title;
+  std::unordered_map<WebKitWebView*, TabChrome> tab_chrome;
   WebKitWebsiteDataManager* website_data_manager = nullptr;
   WebKitWebContext* web_context = nullptr;
   std::unordered_map<std::string, WebKitWebView*> tabs;
@@ -227,6 +242,381 @@ void AddCssProviderToWidget(GtkWidget* widget, GtkCssProvider* provider) {
                                  GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 }
 
+void AddStyleClass(GtkWidget* widget, const char* style_class) {
+  if (widget != nullptr) {
+    gtk_style_context_add_class(gtk_widget_get_style_context(widget), style_class);
+  }
+}
+
+// ── Themes & search engines ─────────────────────────────────────────
+struct VeyraThemeDef {
+  const char* id;
+  const char* label;
+  bool prefer_dark;
+  const char* bg;             // window / notebook background
+  const char* bg2;            // tab strip background
+  const char* surface;        // toolbar top, active tab, menus, tooltips
+  const char* surface_hover;  // active tab hover
+  const char* text;
+  const char* text2;
+  const char* muted;
+  const char* accent;
+  const char* accent_soft;    // hover wash
+  const char* accent_strong;  // press wash / selection
+  const char* border;
+  const char* entry_bg;
+  const char* danger_soft;
+  const char* danger_text;
+  const char* scrollbar;
+};
+
+const VeyraThemeDef kVeyraThemes[] = {
+    {"veyra-dark", "Veyra Dark", true,
+     "#050a12", "#0a1122", "#0c162a", "#11203a",
+     "#d8e8f8", "#7a9abe", "#3e5878",
+     "#2aa6ff", "rgba(42,166,255,0.14)", "rgba(42,166,255,0.30)",
+     "rgba(42,166,255,0.20)", "rgba(5,10,18,0.92)",
+     "rgba(255,59,82,0.30)", "#ffd2d8", "rgba(122,154,190,0.35)"},
+    {"veyra-light", "Veyra Light", false,
+     "#f2f5fa", "#e7edf6", "#ffffff", "#eef3fa",
+     "#1c2733", "#51647a", "#a5b4c6",
+     "#1f7ae0", "rgba(31,122,224,0.10)", "rgba(31,122,224,0.22)",
+     "rgba(31,122,224,0.25)", "#ffffff",
+     "rgba(211,38,63,0.15)", "#a31226", "rgba(81,100,122,0.40)"},
+    {"midnight-purple", "Midnight Purple", true,
+     "#0a0614", "#130b22", "#1a0f30", "#221440",
+     "#eadffc", "#a08fc8", "#5d4b85",
+     "#a55cff", "rgba(165,92,255,0.14)", "rgba(165,92,255,0.30)",
+     "rgba(165,92,255,0.22)", "rgba(10,6,20,0.92)",
+     "rgba(255,59,82,0.30)", "#ffd2d8", "rgba(160,143,200,0.35)"},
+    {"ghost-green", "Ghost Green", true,
+     "#04100a", "#071a10", "#0a2417", "#0e3220",
+     "#d6f5e4", "#74ad90", "#3c6650",
+     "#00e87b", "rgba(0,232,123,0.12)", "rgba(0,232,123,0.26)",
+     "rgba(0,232,123,0.20)", "rgba(4,16,10,0.92)",
+     "rgba(255,59,82,0.30)", "#ffd2d8", "rgba(116,173,144,0.35)"},
+};
+
+const VeyraThemeDef* LookupTheme(const std::string& theme_id) {
+  for (const VeyraThemeDef& theme : kVeyraThemes) {
+    if (theme_id == theme.id) {
+      return &theme;
+    }
+  }
+  return nullptr;
+}
+
+struct SearchEngineDef {
+  const char* id;
+  const char* label;
+  const char* query_url;  // escaped query is appended
+};
+
+const SearchEngineDef kSearchEngines[] = {
+    {"duckduckgo", "DuckDuckGo", "https://duckduckgo.com/?q="},
+    {"google", "Google", "https://www.google.com/search?q="},
+    {"bing", "Bing", "https://www.bing.com/search?q="},
+    {"brave", "Brave Search", "https://search.brave.com/search?q="},
+    {"startpage", "Startpage", "https://www.startpage.com/sp/search?query="},
+};
+
+const SearchEngineDef& LookupSearchEngine(const std::string& engine_id) {
+  for (const SearchEngineDef& engine : kSearchEngines) {
+    if (engine_id == engine.id) {
+      return engine;
+    }
+  }
+  return kSearchEngines[0];
+}
+
+void ReplaceAllInPlace(std::string* text, const std::string& from, const std::string& to) {
+  for (std::size_t pos = 0; (pos = text->find(from, pos)) != std::string::npos; pos += to.size()) {
+    text->replace(pos, from.size(), to);
+  }
+}
+
+// ── UI preference persistence (theme / search engine / panel) ───────
+// Stored outside persona storage on purpose: these are operator chrome
+// preferences, not browsing data, so ephemeral personas keep them too.
+std::string UiPrefsPath() {
+  const gchar* config_dir = g_get_user_config_dir();
+  return std::string(config_dir != nullptr ? config_dir : ".") + "/veyra/ui.conf";
+}
+
+void LoadUiPrefs(WebKitGtkRuntimeState* state) {
+  GKeyFile* key_file = g_key_file_new();
+  if (g_key_file_load_from_file(key_file, UiPrefsPath().c_str(), G_KEY_FILE_NONE, nullptr)) {
+    gchar* value = g_key_file_get_string(key_file, "ui", "theme", nullptr);
+    if (value != nullptr) {
+      if (LookupTheme(value) != nullptr) {
+        state->theme_id = value;
+      }
+      g_free(value);
+    }
+    value = g_key_file_get_string(key_file, "ui", "search_engine", nullptr);
+    if (value != nullptr) {
+      state->search_engine_id = value;
+      g_free(value);
+    }
+    GError* gerror = nullptr;
+    const gboolean show_panel = g_key_file_get_boolean(key_file, "ui", "show_panel", &gerror);
+    if (gerror == nullptr) {
+      state->dashboard_visible = show_panel;
+    } else {
+      g_error_free(gerror);
+    }
+  }
+  g_key_file_free(key_file);
+}
+
+void SaveUiPrefs(const WebKitGtkRuntimeState* state) {
+  const std::string path = UiPrefsPath();
+  const std::size_t slash = path.rfind('/');
+  if (slash != std::string::npos) {
+    g_mkdir_with_parents(path.substr(0, slash).c_str(), 0700);
+  }
+  GKeyFile* key_file = g_key_file_new();
+  g_key_file_set_string(key_file, "ui", "theme", state->theme_id.c_str());
+  g_key_file_set_string(key_file, "ui", "search_engine", state->search_engine_id.c_str());
+  g_key_file_set_boolean(key_file, "ui", "show_panel", state->dashboard_visible);
+  g_key_file_save_to_file(key_file, path.c_str(), nullptr);
+  g_key_file_free(key_file);
+}
+
+// Builds the chrome stylesheet for one theme. Tokens (@BG@ etc.) are
+// substituted from the palette so every theme shares one layout.
+std::string BuildVeyraCss(const VeyraThemeDef& theme) {
+  std::string css = R"css(
+    .veyra-shell { background-color: @BG@; }
+
+    .veyra-toolbar {
+      background-image: linear-gradient(to bottom, @SURFACE@, @BG2@);
+      border-bottom: 1px solid @BORDER@;
+    }
+
+    .veyra-nav-btn {
+      background-color: transparent;
+      background-image: none;
+      border: none;
+      box-shadow: none;
+      border-radius: 8px;
+      padding: 4px 8px;
+      color: @TEXT2@;
+    }
+    .veyra-nav-btn:hover { background-color: @ACCENT_SOFT@; color: @TEXT@; }
+    .veyra-nav-btn:active { background-color: @ACCENT_STRONG@; }
+    .veyra-nav-btn:disabled { color: @MUTED@; }
+
+    .veyra-address {
+      background-color: @ENTRY_BG@;
+      background-image: none;
+      color: @TEXT@;
+      border: 1px solid @BORDER@;
+      border-radius: 17px;
+      padding: 6px 14px;
+      caret-color: @ACCENT@;
+    }
+    .veyra-address:focus {
+      border-color: @ACCENT@;
+      box-shadow: 0 0 10px @ACCENT_SOFT@;
+    }
+    .veyra-address progress {
+      background-color: @ACCENT@;
+      background-image: none;
+      border: none;
+    }
+    .veyra-address image { color: @TEXT2@; }
+    .veyra-address selection { background-color: @ACCENT_STRONG@; }
+
+    notebook { background-color: @BG@; }
+    notebook > header {
+      background-color: @BG2@;
+      background-image: none;
+      border: none;
+      box-shadow: inset 0 -1px @BORDER@;
+    }
+    /* Both `header` and `header.top` forms: desktop themes (e.g. Breeze)
+       style tabs via `header.top`, which out-specifies a plain `header`
+       selector — the .top variants are required for the override to win. */
+    notebook > header > tabs > tab,
+    notebook > header.top > tabs > tab,
+    notebook > header.top > tabs > tab:first-child,
+    notebook > header.top > tabs > tab:last-child {
+      background-color: transparent;
+      background-image: none;
+      border: none;
+      border-image: none;
+      outline-style: none;
+      outline-width: 0;
+      box-shadow: none;
+      border-radius: 9px 9px 0 0;
+      padding: 4px 8px;
+      margin: 3px 1px 0 1px;
+      color: @TEXT2@;
+    }
+    notebook > header > tabs > tab:hover,
+    notebook > header.top > tabs > tab:hover,
+    notebook > header.top > tabs > tab.prelight-page {
+      background-color: @ACCENT_SOFT@;
+      background-image: none;
+      border: none;
+      outline-style: none;
+    }
+    notebook > header > tabs > tab:checked,
+    notebook > header.top > tabs > tab:checked,
+    notebook > header.top > tabs > tab:checked:first-child,
+    notebook > header.top > tabs > tab:checked:not(:first-child),
+    notebook > header.top > tabs > tab:checked:not(:last-child) {
+      background-color: @SURFACE@;
+      background-image: none;
+      border: none;
+      border-color: transparent;
+      outline-style: none;
+      color: @TEXT@;
+      box-shadow: inset 0 2px @ACCENT@;
+      border-radius: 9px 9px 0 0;
+      padding: 4px 8px;
+      margin: 3px 1px 0 1px;
+    }
+    notebook > header > tabs > tab:checked:hover,
+    notebook > header.top > tabs > tab:checked:hover {
+      background-color: @SURFACE_HOVER@;
+      background-image: none;
+    }
+
+    .veyra-tab-title { font-size: 12px; }
+
+    .veyra-tab-close {
+      background-color: transparent;
+      background-image: none;
+      border: none;
+      box-shadow: none;
+      border-radius: 7px;
+      padding: 1px;
+      min-width: 14px;
+      min-height: 14px;
+      color: @TEXT2@;
+    }
+    .veyra-tab-close:hover { background-color: @DANGER_SOFT@; color: @DANGER_TEXT@; }
+
+    spinner { color: @ACCENT@; }
+
+    paned > separator {
+      background-color: @BORDER@;
+      background-image: none;
+      min-width: 2px;
+    }
+
+    scrollbar { background-color: transparent; }
+    scrollbar trough { background-color: transparent; }
+    scrollbar slider {
+      background-color: @SCROLLBAR@;
+      border-radius: 8px;
+      min-width: 8px;
+      min-height: 8px;
+    }
+    scrollbar slider:hover { background-color: @ACCENT_STRONG@; }
+
+    tooltip.background {
+      background-color: @SURFACE@;
+      color: @TEXT@;
+      border: 1px solid @BORDER@;
+      border-radius: 8px;
+    }
+    menu, .menu {
+      background-color: @SURFACE@;
+      color: @TEXT@;
+      border: 1px solid @BORDER@;
+    }
+    menu > menuitem { color: @TEXT@; padding: 6px 10px; }
+    menu > menuitem:hover { background-color: @ACCENT_SOFT@; }
+    menu > menuitem:disabled { color: @MUTED@; }
+  )css";
+
+  ReplaceAllInPlace(&css, "@BG@", theme.bg);
+  ReplaceAllInPlace(&css, "@BG2@", theme.bg2);
+  ReplaceAllInPlace(&css, "@SURFACE_HOVER@", theme.surface_hover);
+  ReplaceAllInPlace(&css, "@SURFACE@", theme.surface);
+  ReplaceAllInPlace(&css, "@TEXT2@", theme.text2);
+  ReplaceAllInPlace(&css, "@TEXT@", theme.text);
+  ReplaceAllInPlace(&css, "@MUTED@", theme.muted);
+  ReplaceAllInPlace(&css, "@ACCENT_SOFT@", theme.accent_soft);
+  ReplaceAllInPlace(&css, "@ACCENT_STRONG@", theme.accent_strong);
+  ReplaceAllInPlace(&css, "@ACCENT@", theme.accent);
+  ReplaceAllInPlace(&css, "@BORDER@", theme.border);
+  ReplaceAllInPlace(&css, "@ENTRY_BG@", theme.entry_bg);
+  ReplaceAllInPlace(&css, "@DANGER_SOFT@", theme.danger_soft);
+  ReplaceAllInPlace(&css, "@DANGER_TEXT@", theme.danger_text);
+  ReplaceAllInPlace(&css, "@SCROLLBAR@", theme.scrollbar);
+  return css;
+}
+
+// Applies (or switches) the screen-wide chrome theme. Widget-level providers
+// (permission/vault dialogs) still win at equal priority, so their styling is
+// unaffected.
+void ApplyVeyraTheme(WebKitGtkRuntimeState* state, const std::string& theme_id) {
+  const VeyraThemeDef* theme = LookupTheme(theme_id);
+  if (theme == nullptr) {
+    theme = &kVeyraThemes[0];
+  }
+
+  GtkSettings* settings = gtk_settings_get_default();
+  if (settings != nullptr) {
+    g_object_set(settings, "gtk-application-prefer-dark-theme",
+                 theme->prefer_dark ? TRUE : FALSE, nullptr);
+  }
+
+  const std::string css = BuildVeyraCss(*theme);
+  GtkCssProvider* provider = gtk_css_provider_new();
+  GError* css_error = nullptr;
+  gtk_css_provider_load_from_data(provider, css.c_str(), -1, &css_error);
+  if (css_error != nullptr) {
+    g_warning("Veyra theme CSS failed to load: %s", css_error->message);
+    g_error_free(css_error);
+    g_object_unref(provider);
+    return;
+  }
+
+  GdkScreen* screen = gdk_screen_get_default();
+  if (state->theme_provider != nullptr) {
+    gtk_style_context_remove_provider_for_screen(screen,
+                                                 GTK_STYLE_PROVIDER(state->theme_provider));
+    g_object_unref(state->theme_provider);
+  }
+  gtk_style_context_add_provider_for_screen(screen, GTK_STYLE_PROVIDER(provider),
+                                            GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+  state->theme_provider = provider;
+  state->theme_id = theme->id;
+}
+
+// Shows/hides the dashboard pane and keeps the menu checkbox + saved prefs
+// in sync.
+void SetDashboardVisible(WebKitGtkRuntimeState* state, bool visible) {
+  if (state == nullptr || state->dashboard_view_widget == nullptr) {
+    return;
+  }
+  if (state->dashboard_visible == visible &&
+      gtk_widget_get_visible(state->dashboard_view_widget) == visible) {
+    return;
+  }
+  state->dashboard_visible = visible;
+  gtk_widget_set_visible(state->dashboard_view_widget, visible);
+  if (state->panel_menu_item != nullptr &&
+      gtk_check_menu_item_get_active(GTK_CHECK_MENU_ITEM(state->panel_menu_item)) != visible) {
+    gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(state->panel_menu_item), visible);
+  }
+  SaveUiPrefs(state);
+}
+
+void UpdateAddressPlaceholder(WebKitGtkRuntimeState* state) {
+  if (state == nullptr || state->address_entry == nullptr) {
+    return;
+  }
+  const SearchEngineDef& engine = LookupSearchEngine(state->search_engine_id);
+  const std::string placeholder = std::string("Search ") + engine.label + " or enter address";
+  gtk_entry_set_placeholder_text(GTK_ENTRY(state->address_entry), placeholder.c_str());
+}
+
 std::string ExtractOriginForPrompt(const std::string& url) {
   if (!IsValidUri(url)) {
     return url.empty() ? "unknown-origin" : url;
@@ -280,16 +670,44 @@ WebKitWebView* ActiveView(WebKitGtkRuntimeState* state) {
   return it == state->tabs.end() ? nullptr : it->second;
 }
 
-// Reflect the active tab's URL and back/forward availability in the toolbar.
+// Reflect the active tab's URL, security state, loading state and
+// back/forward availability in the toolbar and the window title.
 void SyncToolbar(WebKitGtkRuntimeState* state) {
   if (state == nullptr) {
     return;
   }
   WebKitWebView* view = ActiveView(state);
+  const gchar* uri = view != nullptr ? webkit_web_view_get_uri(view) : nullptr;
+  const std::string current_uri = uri == nullptr ? std::string() : std::string(uri);
+  const bool loading = view != nullptr && webkit_web_view_is_loading(view);
+
   if (state->address_entry != nullptr) {
-    const gchar* uri = view != nullptr ? webkit_web_view_get_uri(view) : nullptr;
-    gtk_entry_set_text(GTK_ENTRY(state->address_entry), uri == nullptr ? "" : uri);
+    GtkEntry* entry = GTK_ENTRY(state->address_entry);
+    // Don't clobber the operator's typing while they edit the address bar.
+    if (!gtk_widget_has_focus(state->address_entry)) {
+      gtk_entry_set_text(entry, current_uri.c_str());
+    }
+
+    const char* icon = "system-search-symbolic";
+    const char* icon_tip = "Search DuckDuckGo or enter address";
+    if (current_uri.rfind("https://", 0) == 0) {
+      icon = "channel-secure-symbolic";
+      icon_tip = "Secure connection (HTTPS)";
+    } else if (current_uri.rfind("http://", 0) == 0) {
+      icon = "dialog-warning-symbolic";
+      icon_tip = "Not secure — plain HTTP";
+    } else if (current_uri.rfind("file://", 0) == 0 || current_uri.rfind("about:", 0) == 0) {
+      icon = "text-x-generic-symbolic";
+      icon_tip = "Local page";
+    }
+    gtk_entry_set_icon_from_icon_name(entry, GTK_ENTRY_ICON_PRIMARY, icon);
+    gtk_entry_set_icon_tooltip_text(entry, GTK_ENTRY_ICON_PRIMARY, icon_tip);
+
+    if (!loading) {
+      gtk_entry_set_progress_fraction(entry, 0.0);
+    }
   }
+
   if (state->back_button != nullptr) {
     gtk_widget_set_sensitive(state->back_button,
                              view != nullptr && webkit_web_view_can_go_back(view));
@@ -297,6 +715,21 @@ void SyncToolbar(WebKitGtkRuntimeState* state) {
   if (state->forward_button != nullptr) {
     gtk_widget_set_sensitive(state->forward_button,
                              view != nullptr && webkit_web_view_can_go_forward(view));
+  }
+  if (state->reload_button != nullptr) {
+    GtkWidget* image = gtk_image_new_from_icon_name(
+        loading ? "process-stop-symbolic" : "view-refresh-symbolic", GTK_ICON_SIZE_BUTTON);
+    gtk_button_set_image(GTK_BUTTON(state->reload_button), image);
+    gtk_widget_set_tooltip_text(state->reload_button, loading ? "Stop" : "Reload");
+  }
+
+  if (state->window != nullptr) {
+    const gchar* title = view != nullptr ? webkit_web_view_get_title(view) : nullptr;
+    const std::string base =
+        state->base_window_title.empty() ? std::string("Veyra") : state->base_window_title;
+    const std::string window_title =
+        (title != nullptr && *title != '\0') ? std::string(title) + " — " + base : base;
+    gtk_window_set_title(GTK_WINDOW(state->window), window_title.c_str());
   }
 }
 
@@ -329,9 +762,169 @@ void OnNavForward(GtkButton* /*button*/, gpointer user_data) {
 
 void OnNavReload(GtkButton* /*button*/, gpointer user_data) {
   WebKitWebView* view = ActiveView(static_cast<WebKitGtkRuntimeState*>(user_data));
-  if (view != nullptr) {
+  if (view == nullptr) {
+    return;
+  }
+  if (webkit_web_view_is_loading(view)) {
+    webkit_web_view_stop_loading(view);
+  } else {
     webkit_web_view_reload(view);
   }
+}
+
+// Removes a tab from the notebook and all engine-side maps. Map entries are
+// erased before the page widget is destroyed so no in-flight signal handler
+// can resolve the dying view back to a tab.
+void CloseTabByView(WebKitGtkRuntimeState* state, WebKitWebView* view) {
+  if (state == nullptr || view == nullptr) {
+    return;
+  }
+  const auto id_it = state->tab_ids.find(view);
+  if (id_it == state->tab_ids.end()) {
+    return;
+  }
+  const std::string tab_id = id_it->second;
+
+  GtkWidget* page = nullptr;
+  for (const auto& entry : state->page_ids) {
+    if (entry.second == tab_id) {
+      page = entry.first;
+      break;
+    }
+  }
+
+  state->tabs.erase(tab_id);
+  state->tab_ids.erase(view);
+  state->tab_chrome.erase(view);
+  if (page != nullptr) {
+    state->page_ids.erase(page);
+    const int page_num = gtk_notebook_page_num(GTK_NOTEBOOK(state->notebook), page);
+    if (page_num >= 0) {
+      gtk_notebook_remove_page(GTK_NOTEBOOK(state->notebook), page_num);
+    }
+  }
+
+  // The switch-page signal updates active_tab_id when another page takes
+  // focus; if the closed tab was the last one, clear the stale id.
+  if (state->tabs.find(state->active_tab_id) == state->tabs.end()) {
+    state->active_tab_id.clear();
+    const int current = gtk_notebook_get_current_page(GTK_NOTEBOOK(state->notebook));
+    if (current >= 0) {
+      GtkWidget* current_page = gtk_notebook_get_nth_page(GTK_NOTEBOOK(state->notebook), current);
+      const auto found = state->page_ids.find(current_page);
+      if (found != state->page_ids.end()) {
+        state->active_tab_id = found->second;
+      }
+    }
+  }
+  SyncToolbar(state);
+}
+
+void OnTabCloseClicked(GtkButton* button, gpointer user_data) {
+  auto* state = static_cast<WebKitGtkRuntimeState*>(user_data);
+  auto* view = static_cast<WebKitWebView*>(g_object_get_data(G_OBJECT(button), "veyra-view"));
+  CloseTabByView(state, view);
+}
+
+// Live page-title updates for the tab label and (for the active tab) the
+// window title.
+void OnTitleChanged(GObject* object, GParamSpec* /*pspec*/, gpointer user_data) {
+  auto* state = static_cast<WebKitGtkRuntimeState*>(user_data);
+  auto* view = WEBKIT_WEB_VIEW(object);
+  if (state == nullptr || view == nullptr) {
+    return;
+  }
+  const auto chrome_it = state->tab_chrome.find(view);
+  if (chrome_it == state->tab_chrome.end()) {
+    return;
+  }
+  const gchar* title = webkit_web_view_get_title(view);
+  std::string display = (title != nullptr && *title != '\0') ? std::string(title) : std::string();
+  if (display.empty()) {
+    const gchar* uri = webkit_web_view_get_uri(view);
+    display = uri != nullptr ? ExtractOriginForPrompt(uri) : std::string("New tab");
+  }
+  if (chrome_it->second.title_label != nullptr) {
+    gtk_label_set_text(GTK_LABEL(chrome_it->second.title_label), display.c_str());
+    gtk_widget_set_tooltip_text(chrome_it->second.title_label, display.c_str());
+  }
+  const auto id_it = state->tab_ids.find(view);
+  if (id_it != state->tab_ids.end() && id_it->second == state->active_tab_id) {
+    SyncToolbar(state);
+  }
+}
+
+void OnLoadProgressChanged(GObject* object, GParamSpec* /*pspec*/, gpointer user_data) {
+  auto* state = static_cast<WebKitGtkRuntimeState*>(user_data);
+  auto* view = WEBKIT_WEB_VIEW(object);
+  if (state == nullptr || view == nullptr || state->address_entry == nullptr) {
+    return;
+  }
+  const auto id_it = state->tab_ids.find(view);
+  if (id_it == state->tab_ids.end() || id_it->second != state->active_tab_id) {
+    return;
+  }
+  const gdouble progress = webkit_web_view_get_estimated_load_progress(view);
+  gtk_entry_set_progress_fraction(GTK_ENTRY(state->address_entry),
+                                  (progress >= 1.0 || progress <= 0.0) ? 0.0 : progress);
+}
+
+void OnIsLoadingChanged(GObject* object, GParamSpec* /*pspec*/, gpointer user_data) {
+  auto* state = static_cast<WebKitGtkRuntimeState*>(user_data);
+  auto* view = WEBKIT_WEB_VIEW(object);
+  if (state == nullptr || view == nullptr) {
+    return;
+  }
+  const bool loading = webkit_web_view_is_loading(view);
+
+  const auto chrome_it = state->tab_chrome.find(view);
+  if (chrome_it != state->tab_chrome.end() && chrome_it->second.spinner != nullptr) {
+    if (loading) {
+      gtk_widget_show(chrome_it->second.spinner);
+      gtk_spinner_start(GTK_SPINNER(chrome_it->second.spinner));
+    } else {
+      gtk_spinner_stop(GTK_SPINNER(chrome_it->second.spinner));
+      gtk_widget_hide(chrome_it->second.spinner);
+    }
+  }
+
+  const auto id_it = state->tab_ids.find(view);
+  if (id_it != state->tab_ids.end() && id_it->second == state->active_tab_id) {
+    SyncToolbar(state);
+  }
+}
+
+// Keyboard accelerators ------------------------------------------------------
+gboolean OnAccelFocusAddress(GtkAccelGroup* /*group*/, GObject* /*acceleratable*/,
+                             guint /*keyval*/, GdkModifierType /*modifier*/, gpointer user_data) {
+  auto* state = static_cast<WebKitGtkRuntimeState*>(user_data);
+  if (state != nullptr && state->address_entry != nullptr) {
+    gtk_widget_grab_focus(state->address_entry);
+    gtk_editable_select_region(GTK_EDITABLE(state->address_entry), 0, -1);
+  }
+  return TRUE;
+}
+
+gboolean OnAccelNewTab(GtkAccelGroup* /*group*/, GObject* /*acceleratable*/,
+                       guint /*keyval*/, GdkModifierType /*modifier*/, gpointer user_data) {
+  auto* state = static_cast<WebKitGtkRuntimeState*>(user_data);
+  if (state != nullptr && state->owner != nullptr) {
+    state->owner->DispatchDashboardAction("{\"action\":\"open_tab\",\"url\":\"about:blank\"}");
+  }
+  return TRUE;
+}
+
+gboolean OnAccelCloseTab(GtkAccelGroup* /*group*/, GObject* /*acceleratable*/,
+                         guint /*keyval*/, GdkModifierType /*modifier*/, gpointer user_data) {
+  auto* state = static_cast<WebKitGtkRuntimeState*>(user_data);
+  CloseTabByView(state, ActiveView(state));
+  return TRUE;
+}
+
+gboolean OnAccelReload(GtkAccelGroup* /*group*/, GObject* /*acceleratable*/,
+                       guint /*keyval*/, GdkModifierType /*modifier*/, gpointer user_data) {
+  OnNavReload(nullptr, user_data);
+  return TRUE;
 }
 
 void OnAddressActivate(GtkEntry* entry, gpointer user_data) {
@@ -360,13 +953,14 @@ void OnAddressActivate(GtkEntry* entry, gpointer user_data) {
                           target.rfind("about:", 0) == 0 ||
                           target.rfind("file:", 0) == 0;
   if (!has_scheme) {
-    // A token with a dot and no spaces looks like a host; otherwise treat as a
-    // DuckDuckGo search query (privacy-respecting default).
+    // A token with a dot and no spaces looks like a host; otherwise send it to
+    // the configured search engine (DuckDuckGo by default).
     if (target.find(' ') == std::string::npos && target.find('.') != std::string::npos) {
       target = "https://" + target;
     } else {
+      const SearchEngineDef& engine = LookupSearchEngine(state->search_engine_id);
       gchar* escaped = g_uri_escape_string(target.c_str(), nullptr, FALSE);
-      target = "https://duckduckgo.com/?q=" + std::string(escaped == nullptr ? "" : escaped);
+      target = std::string(engine.query_url) + (escaped == nullptr ? "" : escaped);
       if (escaped != nullptr) g_free(escaped);
     }
   }
@@ -383,29 +977,121 @@ void OnNewTabClicked(GtkButton* /*button*/, gpointer user_data) {
   }
 }
 
+// ── Hamburger menu callbacks ─────────────────────────────────────────
+void OnThemeMenuItem(GtkMenuItem* item, gpointer user_data) {
+  auto* state = static_cast<WebKitGtkRuntimeState*>(user_data);
+  if (!gtk_check_menu_item_get_active(GTK_CHECK_MENU_ITEM(item))) {
+    return;  // radio group deactivation of the previous item
+  }
+  const char* theme_id =
+      static_cast<const char*>(g_object_get_data(G_OBJECT(item), "veyra-theme-id"));
+  if (state != nullptr && theme_id != nullptr && state->theme_id != theme_id) {
+    ApplyVeyraTheme(state, theme_id);
+    SaveUiPrefs(state);
+  }
+}
+
+void OnSearchEngineMenuItem(GtkMenuItem* item, gpointer user_data) {
+  auto* state = static_cast<WebKitGtkRuntimeState*>(user_data);
+  if (!gtk_check_menu_item_get_active(GTK_CHECK_MENU_ITEM(item))) {
+    return;
+  }
+  const char* engine_id =
+      static_cast<const char*>(g_object_get_data(G_OBJECT(item), "veyra-engine-id"));
+  if (state != nullptr && engine_id != nullptr && state->search_engine_id != engine_id) {
+    state->search_engine_id = engine_id;
+    UpdateAddressPlaceholder(state);
+    SaveUiPrefs(state);
+  }
+}
+
+void OnPanelMenuToggled(GtkCheckMenuItem* item, gpointer user_data) {
+  auto* state = static_cast<WebKitGtkRuntimeState*>(user_data);
+  SetDashboardVisible(state, gtk_check_menu_item_get_active(item));
+}
+
+// Builds the ☰ menu: Veyra panel toggle, theme picker, search engine picker.
+GtkWidget* BuildAppMenu(WebKitGtkRuntimeState* state) {
+  GtkWidget* menu = gtk_menu_new();
+
+  state->panel_menu_item = gtk_check_menu_item_new_with_label("Veyra Panel");
+  gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(state->panel_menu_item),
+                                 state->dashboard_visible);
+  g_signal_connect(state->panel_menu_item, "toggled", G_CALLBACK(OnPanelMenuToggled), state);
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu), state->panel_menu_item);
+
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
+
+  GtkWidget* theme_header = gtk_menu_item_new_with_label("Theme");
+  gtk_widget_set_sensitive(theme_header, FALSE);
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu), theme_header);
+
+  GSList* theme_group = nullptr;
+  for (const VeyraThemeDef& theme : kVeyraThemes) {
+    GtkWidget* item = gtk_radio_menu_item_new_with_label(theme_group, theme.label);
+    theme_group = gtk_radio_menu_item_get_group(GTK_RADIO_MENU_ITEM(item));
+    if (state->theme_id == theme.id) {
+      gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(item), TRUE);
+    }
+    // kVeyraThemes has static storage duration, so the id pointer stays valid.
+    g_object_set_data(G_OBJECT(item), "veyra-theme-id", const_cast<char*>(theme.id));
+    g_signal_connect(item, "toggled", G_CALLBACK(OnThemeMenuItem), state);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
+  }
+
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
+
+  GtkWidget* engine_header = gtk_menu_item_new_with_label("Search engine");
+  gtk_widget_set_sensitive(engine_header, FALSE);
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu), engine_header);
+
+  GSList* engine_group = nullptr;
+  for (const SearchEngineDef& engine : kSearchEngines) {
+    GtkWidget* item = gtk_radio_menu_item_new_with_label(engine_group, engine.label);
+    engine_group = gtk_radio_menu_item_get_group(GTK_RADIO_MENU_ITEM(item));
+    if (state->search_engine_id == engine.id) {
+      gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(item), TRUE);
+    }
+    g_object_set_data(G_OBJECT(item), "veyra-engine-id", const_cast<char*>(engine.id));
+    g_signal_connect(item, "toggled", G_CALLBACK(OnSearchEngineMenuItem), state);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
+  }
+
+  gtk_widget_show_all(menu);
+  return menu;
+}
+
+GtkWidget* MakeNavButton(const char* icon_name, const char* tooltip) {
+  GtkWidget* button = gtk_button_new_from_icon_name(icon_name, GTK_ICON_SIZE_BUTTON);
+  gtk_widget_set_tooltip_text(button, tooltip);
+  gtk_button_set_relief(GTK_BUTTON(button), GTK_RELIEF_NONE);
+  gtk_widget_set_focus_on_click(button, FALSE);
+  AddStyleClass(button, "veyra-nav-btn");
+  return button;
+}
+
 // Builds the browser chrome: a vertical box of [navigation toolbar | notebook].
 GtkWidget* BuildBrowserChrome(WebKitGtkRuntimeState* state) {
   GtkWidget* vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 
   GtkWidget* toolbar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-  gtk_widget_set_margin_start(toolbar, 6);
-  gtk_widget_set_margin_end(toolbar, 6);
-  gtk_widget_set_margin_top(toolbar, 5);
-  gtk_widget_set_margin_bottom(toolbar, 5);
+  AddStyleClass(toolbar, "veyra-toolbar");
+  gtk_widget_set_margin_start(toolbar, 8);
+  gtk_widget_set_margin_end(toolbar, 8);
+  gtk_widget_set_margin_top(toolbar, 6);
+  gtk_widget_set_margin_bottom(toolbar, 6);
 
-  state->back_button = gtk_button_new_from_icon_name("go-previous-symbolic", GTK_ICON_SIZE_BUTTON);
-  gtk_widget_set_tooltip_text(state->back_button, "Back");
+  state->back_button = MakeNavButton("go-previous-symbolic", "Back (Alt+Left)");
   g_signal_connect(state->back_button, "clicked", G_CALLBACK(OnNavBack), state);
 
-  state->forward_button = gtk_button_new_from_icon_name("go-next-symbolic", GTK_ICON_SIZE_BUTTON);
-  gtk_widget_set_tooltip_text(state->forward_button, "Forward");
+  state->forward_button = MakeNavButton("go-next-symbolic", "Forward (Alt+Right)");
   g_signal_connect(state->forward_button, "clicked", G_CALLBACK(OnNavForward), state);
 
-  GtkWidget* reload_button = gtk_button_new_from_icon_name("view-refresh-symbolic", GTK_ICON_SIZE_BUTTON);
-  gtk_widget_set_tooltip_text(reload_button, "Reload");
-  g_signal_connect(reload_button, "clicked", G_CALLBACK(OnNavReload), state);
+  state->reload_button = MakeNavButton("view-refresh-symbolic", "Reload (Ctrl+R)");
+  g_signal_connect(state->reload_button, "clicked", G_CALLBACK(OnNavReload), state);
 
   state->address_entry = gtk_entry_new();
+  AddStyleClass(state->address_entry, "veyra-address");
   gtk_entry_set_placeholder_text(GTK_ENTRY(state->address_entry),
                                  "Search DuckDuckGo or enter address");
   gtk_entry_set_icon_from_icon_name(GTK_ENTRY(state->address_entry),
@@ -413,19 +1099,61 @@ GtkWidget* BuildBrowserChrome(WebKitGtkRuntimeState* state) {
   gtk_widget_set_hexpand(state->address_entry, TRUE);
   g_signal_connect(state->address_entry, "activate", G_CALLBACK(OnAddressActivate), state);
 
-  GtkWidget* new_tab_button = gtk_button_new_from_icon_name("tab-new-symbolic", GTK_ICON_SIZE_BUTTON);
-  gtk_widget_set_tooltip_text(new_tab_button, "New tab");
+  GtkWidget* new_tab_button = MakeNavButton("tab-new-symbolic", "New tab (Ctrl+T)");
   g_signal_connect(new_tab_button, "clicked", G_CALLBACK(OnNewTabClicked), state);
+
+  GtkWidget* menu_button = gtk_menu_button_new();
+  gtk_button_set_image(GTK_BUTTON(menu_button),
+                       gtk_image_new_from_icon_name("open-menu-symbolic", GTK_ICON_SIZE_BUTTON));
+  gtk_button_set_relief(GTK_BUTTON(menu_button), GTK_RELIEF_NONE);
+  gtk_widget_set_focus_on_click(menu_button, FALSE);
+  gtk_widget_set_tooltip_text(menu_button, "Menu — panel, theme, search engine");
+  AddStyleClass(menu_button, "veyra-nav-btn");
+  gtk_menu_button_set_popup(GTK_MENU_BUTTON(menu_button), BuildAppMenu(state));
 
   gtk_box_pack_start(GTK_BOX(toolbar), state->back_button, FALSE, FALSE, 0);
   gtk_box_pack_start(GTK_BOX(toolbar), state->forward_button, FALSE, FALSE, 0);
-  gtk_box_pack_start(GTK_BOX(toolbar), reload_button, FALSE, FALSE, 0);
+  gtk_box_pack_start(GTK_BOX(toolbar), state->reload_button, FALSE, FALSE, 0);
   gtk_box_pack_start(GTK_BOX(toolbar), state->address_entry, TRUE, TRUE, 0);
   gtk_box_pack_start(GTK_BOX(toolbar), new_tab_button, FALSE, FALSE, 0);
+  gtk_box_pack_start(GTK_BOX(toolbar), menu_button, FALSE, FALSE, 0);
 
   gtk_box_pack_start(GTK_BOX(vbox), toolbar, FALSE, FALSE, 0);
   gtk_box_pack_start(GTK_BOX(vbox), state->notebook, TRUE, TRUE, 0);
   return vbox;
+}
+
+// Builds the [spinner | title | close] widget used as a notebook tab label.
+GtkWidget* BuildTabLabel(WebKitGtkRuntimeState* state, WebKitWebView* view,
+                         const std::string& initial_title) {
+  GtkWidget* label_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+
+  GtkWidget* spinner = gtk_spinner_new();
+  gtk_widget_set_no_show_all(spinner, TRUE);
+
+  GtkWidget* title_label = gtk_label_new(initial_title.c_str());
+  AddStyleClass(title_label, "veyra-tab-title");
+  gtk_label_set_ellipsize(GTK_LABEL(title_label), PANGO_ELLIPSIZE_END);
+  gtk_label_set_width_chars(GTK_LABEL(title_label), 12);
+  gtk_label_set_max_width_chars(GTK_LABEL(title_label), 18);
+  gtk_label_set_xalign(GTK_LABEL(title_label), 0.0f);
+
+  GtkWidget* close_button =
+      gtk_button_new_from_icon_name("window-close-symbolic", GTK_ICON_SIZE_MENU);
+  gtk_button_set_relief(GTK_BUTTON(close_button), GTK_RELIEF_NONE);
+  gtk_widget_set_focus_on_click(close_button, FALSE);
+  gtk_widget_set_tooltip_text(close_button, "Close tab (Ctrl+W)");
+  AddStyleClass(close_button, "veyra-tab-close");
+  g_object_set_data(G_OBJECT(close_button), "veyra-view", view);
+  g_signal_connect(close_button, "clicked", G_CALLBACK(OnTabCloseClicked), state);
+
+  gtk_box_pack_start(GTK_BOX(label_box), spinner, FALSE, FALSE, 0);
+  gtk_box_pack_start(GTK_BOX(label_box), title_label, TRUE, TRUE, 0);
+  gtk_box_pack_start(GTK_BOX(label_box), close_button, FALSE, FALSE, 0);
+  gtk_widget_show_all(label_box);
+
+  state->tab_chrome[view] = TabChrome{spinner, title_label};
+  return label_box;
 }
 
 // Snapshots a WebKitWebView's rendered content to PNG via WebKit's own snapshot
@@ -939,8 +1667,27 @@ bool WebKitGtkBrowserEngine::CreateWindow(const BrowserEngineConfig& config, std
 
   gtk_window_set_title(GTK_WINDOW(state_->window), config_.window_title.c_str());
   gtk_window_set_default_size(GTK_WINDOW(state_->window), config_.width, config_.height);
+  state_->base_window_title = config_.window_title;
+
+  LoadUiPrefs(state_);
+  ApplyVeyraTheme(state_, state_->theme_id);
+  AddStyleClass(state_->window, "veyra-shell");
+
+  // Best-effort window icon: the shell is normally launched from the repo
+  // root (scripts/native-shell.sh), where veyra_logo.svg lives.
+  for (const char* icon_candidate :
+       {"veyra_logo.svg", "assets/veyra_logo.svg", "../veyra_logo.svg"}) {
+    std::error_code icon_ec;
+    if (std::filesystem::exists(icon_candidate, icon_ec)) {
+      if (gtk_window_set_icon_from_file(GTK_WINDOW(state_->window), icon_candidate, nullptr)) {
+        break;
+      }
+    }
+  }
 
   state_->notebook = gtk_notebook_new();
+  gtk_notebook_set_scrollable(GTK_NOTEBOOK(state_->notebook), TRUE);
+  gtk_notebook_set_show_border(GTK_NOTEBOOK(state_->notebook), FALSE);
 
   // Phase 9: Dashboard sidebar via GtkPaned.
   // Left pane = React dashboard WebView (320px); right pane = browser notebook.
@@ -1006,7 +1753,7 @@ bool WebKitGtkBrowserEngine::CreateWindow(const BrowserEngineConfig& config, std
     state_->paned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_paned_pack1(GTK_PANED(state_->paned), dash_widget, FALSE, FALSE);
     gtk_paned_pack2(GTK_PANED(state_->paned), browser_box, TRUE, TRUE);
-    gtk_paned_set_position(GTK_PANED(state_->paned), 300);
+    gtk_paned_set_position(GTK_PANED(state_->paned), 360);
     gtk_container_add(GTK_CONTAINER(state_->window), state_->paned);
   } else {
     gtk_container_add(GTK_CONTAINER(state_->window), BuildBrowserChrome(state_));
@@ -1016,7 +1763,30 @@ bool WebKitGtkBrowserEngine::CreateWindow(const BrowserEngineConfig& config, std
   g_signal_connect(state_->notebook, "switch-page", G_CALLBACK(OnNotebookSwitchPage), state_);
   g_signal_connect(state_->web_context, "download-started", G_CALLBACK(OnDownloadStarted), state_);
 
+  // Browser keyboard shortcuts. Window accelerators run before the focused
+  // WebView sees the key, matching mainstream browser behaviour.
+  GtkAccelGroup* accels = gtk_accel_group_new();
+  gtk_window_add_accel_group(GTK_WINDOW(state_->window), accels);
+  gtk_accel_group_connect(accels, GDK_KEY_l, GDK_CONTROL_MASK, GtkAccelFlags(0),
+                          g_cclosure_new(G_CALLBACK(OnAccelFocusAddress), state_, nullptr));
+  gtk_accel_group_connect(accels, GDK_KEY_t, GDK_CONTROL_MASK, GtkAccelFlags(0),
+                          g_cclosure_new(G_CALLBACK(OnAccelNewTab), state_, nullptr));
+  gtk_accel_group_connect(accels, GDK_KEY_w, GDK_CONTROL_MASK, GtkAccelFlags(0),
+                          g_cclosure_new(G_CALLBACK(OnAccelCloseTab), state_, nullptr));
+  gtk_accel_group_connect(accels, GDK_KEY_r, GDK_CONTROL_MASK, GtkAccelFlags(0),
+                          g_cclosure_new(G_CALLBACK(OnAccelReload), state_, nullptr));
+  gtk_accel_group_connect(accels, GDK_KEY_F5, GdkModifierType(0), GtkAccelFlags(0),
+                          g_cclosure_new(G_CALLBACK(OnAccelReload), state_, nullptr));
+  g_object_unref(accels);
+
+  UpdateAddressPlaceholder(state_);
   gtk_widget_show_all(state_->window);
+
+  // The dashboard pane starts hidden so the shell opens looking like a normal
+  // browser; the ☰ menu (or `panel on`) reveals it. Honors the saved pref.
+  if (state_->dashboard_view_widget != nullptr && !state_->dashboard_visible) {
+    gtk_widget_hide(state_->dashboard_view_widget);
+  }
 
   // Optional automation/self-test control channel.
   if (!config_.control_fifo_path.empty()) {
@@ -1241,6 +2011,44 @@ void WebKitGtkBrowserEngine::HandleControlLine(const std::string& raw_line) {
     report(ActivateTab(arg, &err) ? "{\"ok\":true}" : ("{\"ok\":false,\"error\":" + q(err) + "}"));
 
   // ── settings / actions ────────────────────────────────────────
+  } else if (cmd == "panel") {
+    const bool show = arg == "toggle" ? !state_->dashboard_visible : (arg == "on" || arg == "1");
+    SetDashboardVisible(state_, show);
+    report(std::string("{\"ok\":true,\"panel\":") + (show ? "true" : "false") + "}");
+  } else if (cmd == "theme") {
+    if (arg.empty()) {
+      std::string json = "{\"ok\":true,\"active\":" + q(state_->theme_id) + ",\"themes\":[";
+      bool first = true;
+      for (const VeyraThemeDef& theme : kVeyraThemes) {
+        if (!first) json += ",";
+        json += q(theme.id);
+        first = false;
+      }
+      report(json + "]}");
+    } else if (LookupTheme(arg) == nullptr) {
+      report("{\"ok\":false,\"error\":\"unknown theme: " + JsonEscape(arg) + "\"}");
+    } else {
+      ApplyVeyraTheme(state_, arg);
+      SaveUiPrefs(state_);
+      report("{\"ok\":true,\"theme\":" + q(arg) + "}");
+    }
+  } else if (cmd == "search-engine") {
+    if (arg.empty()) {
+      std::string json =
+          "{\"ok\":true,\"active\":" + q(state_->search_engine_id) + ",\"engines\":[";
+      bool first = true;
+      for (const SearchEngineDef& engine : kSearchEngines) {
+        if (!first) json += ",";
+        json += q(engine.id);
+        first = false;
+      }
+      report(json + "]}");
+    } else {
+      state_->search_engine_id = LookupSearchEngine(arg).id;
+      UpdateAddressPlaceholder(state_);
+      SaveUiPrefs(state_);
+      report("{\"ok\":true,\"search_engine\":" + q(state_->search_engine_id) + "}");
+    }
   } else if (cmd == "route" && !arg.empty()) {
     DispatchDashboardAction("{\"action\":\"switch_route\",\"route_profile_id\":\"" + arg + "\"}");
     report("{\"ok\":true,\"route\":" + q(arg) + "}");
@@ -1251,12 +2059,57 @@ void WebKitGtkBrowserEngine::HandleControlLine(const std::string& raw_line) {
     DispatchDashboardAction("{\"action\":\"open_tab\",\"url\":\"" +
                             (arg.empty() ? std::string("about:blank") : arg) + "\"}");
     report("{\"ok\":true}");
+  } else if (cmd == "tab-close") {
+    // Closes the given tab id, or the active tab when no id is given.
+    WebKitWebView* target = nullptr;
+    if (arg.empty()) {
+      target = ActiveView(state_);
+    } else {
+      const auto found = state_->tabs.find(arg);
+      target = found == state_->tabs.end() ? nullptr : found->second;
+    }
+    if (target == nullptr) {
+      report("{\"ok\":false,\"error\":\"no such tab\"}");
+    } else {
+      CloseTabByView(state_, target);
+      report("{\"ok\":true,\"active\":" + q(state_->active_tab_id) + "}");
+    }
 
   // ── capture / lifecycle ───────────────────────────────────────
   } else if (cmd == "snapshot" && !arg.empty()) {
     SnapshotView(view, arg);
   } else if (cmd == "snapshot-dash" && !arg.empty()) {
     SnapshotView(state_->dashboard_view, arg);
+  } else if (cmd == "snapshot-window" && !arg.empty()) {
+    // Renders the whole GTK window (toolbar, tabs, paned chrome) offscreen.
+    // WebKit's GL-composited page area may come out blank — use `snapshot` /
+    // `snapshot-dash` for page pixels; this command is for chrome inspection.
+    if (state_->window == nullptr) {
+      report("{\"ok\":false,\"error\":\"no window\"}");
+    } else {
+      GtkAllocation alloc;
+      gtk_widget_get_allocation(state_->window, &alloc);
+      cairo_surface_t* surface =
+          cairo_image_surface_create(CAIRO_FORMAT_ARGB32, alloc.width, alloc.height);
+      cairo_t* cr = cairo_create(surface);
+      gtk_widget_draw(state_->window, cr);
+      cairo_destroy(cr);
+      const bool ok = cairo_surface_write_to_png(surface, arg.c_str()) == CAIRO_STATUS_SUCCESS;
+      cairo_surface_destroy(surface);
+      report(std::string("{\"ok\":") + (ok ? "true" : "false") + ",\"path\":" + q(arg) + "}");
+    }
+  } else if (cmd == "help") {
+    report("{\"ok\":true,\"commands\":["
+           "\"navigate back forward reload url title quit\","
+           "\"tab-new tab-close tabs tab route action\","
+           "\"panel theme search-engine\","
+           "\"wait-load wait-for wait-text\","
+           "\"click dblclick rightclick hover focus blur fill type clear keypress check select submit scroll scroll-by\","
+           "\"gettext getvalue exists visible count attrs html bounds query pageinfo links\","
+           "\"clickable textdump annotate annotate-clear click-index\","
+           "\"console errors clear-logs cookies storage-get storage-set storage-clear\","
+           "\"assert-text assert-exists assert-url\","
+           "\"snapshot snapshot-dash snapshot-window eval script help\"]}");
   } else if (cmd == "eval" && !arg.empty()) {
     run_js(arg);
   } else if (cmd == "script" && !arg.empty()) {
@@ -1359,6 +2212,10 @@ bool WebKitGtkBrowserEngine::CreateTab(const std::string& tab_id,
   InjectExtensionPolicyScript(view);
   InjectExtensionContentScripts(view);
   g_signal_connect(view, "load-changed", G_CALLBACK(OnLoadChanged), state_);
+  g_signal_connect(view, "notify::title", G_CALLBACK(OnTitleChanged), state_);
+  g_signal_connect(view, "notify::estimated-load-progress",
+                   G_CALLBACK(OnLoadProgressChanged), state_);
+  g_signal_connect(view, "notify::is-loading", G_CALLBACK(OnIsLoadingChanged), state_);
   g_signal_connect(view, "permission-request", G_CALLBACK(OnPermissionRequest), state_);
   g_signal_connect(view, "decide-policy", G_CALLBACK(OnDecidePolicy), state_);
   g_signal_connect(view, "enter-fullscreen", G_CALLBACK(OnEnterFullscreen), state_);
@@ -1369,13 +2226,21 @@ bool WebKitGtkBrowserEngine::CreateTab(const std::string& tab_id,
   GtkWidget* scroller = gtk_scrolled_window_new(nullptr, nullptr);
   gtk_container_add(GTK_CONTAINER(scroller), GTK_WIDGET(view));
 
-  GtkWidget* label = gtk_label_new(tab_id.c_str());
+  // Seed the tab title with the destination origin until the page reports
+  // its real title via notify::title.
+  std::string initial_title = ExtractOriginForPrompt(initial_url);
+  if (initial_title.empty() || initial_url == "about:blank") {
+    initial_title = "New tab";
+  }
+  GtkWidget* label = BuildTabLabel(state_, view, initial_title);
   const int page_index = gtk_notebook_append_page(GTK_NOTEBOOK(state_->notebook), scroller, label);
   if (page_index < 0) {
+    state_->tab_chrome.erase(view);
     SetError(error, "Failed to append tab to notebook.");
     return false;
   }
 
+  gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(state_->notebook), scroller, TRUE);
   gtk_notebook_set_current_page(GTK_NOTEBOOK(state_->notebook), page_index);
   gtk_widget_show_all(scroller);
 

@@ -90,8 +90,10 @@ Every selector argument accepts three forms:
 | `back` / `forward` / `reload` | History / reload |
 | `url` / `title` | Active tab URL / `document.title` |
 | `tab-new [url]` | Open a new tab |
+| `tab-close [id]` | Close a tab (active tab when no id) |
 | `tabs` | List open tabs `{id,url,active}` |
 | `tab <id>` | Activate a tab |
+| `help` | List all control commands |
 | `quit` | Close the shell |
 
 ### Waits (no more manual `sleep`)
@@ -163,12 +165,18 @@ Every selector argument accepts three forms:
 |---|---|
 | `route <profile_id>` | Switch the active route (e.g. `route tor_bridge`) |
 | `action <json>` | Raw dashboard action (`switch_route`, `open_tab`, `ai_*`, `osint_*`) |
+| `panel <on\|off\|toggle>` | Show/hide the Veyra dashboard side panel |
+| `theme [id]` | List themes, or switch (`veyra-dark`, `veyra-light`, `midnight-purple`, `ghost-green`) |
+| `search-engine [id]` | List/set the address-bar search engine (`duckduckgo`, `google`, `bing`, `brave`, `startpage`) |
+
+Panel visibility, theme and search engine persist in `~/.config/veyra/ui.conf`.
 
 ### Capture & scripting
 | Command | Effect |
 |---|---|
 | `snapshot <path.png>` | Render the **active page** to PNG (WebKit snapshot) |
 | `snapshot-dash <path.png>` | Render the **dashboard** panel to PNG |
+| `snapshot-window <path.png>` | Render the **whole GTK window** (toolbar, tabs, paned chrome) to PNG — for chrome/theme inspection |
 | `eval <js>` | Run arbitrary JS, return its value |
 | `script <file>` | Run a sequence of commands from a file |
 

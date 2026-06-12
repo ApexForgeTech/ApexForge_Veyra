@@ -137,6 +137,8 @@ body {
   text-transform: uppercase;
   backdrop-filter: blur(8px);
   transition: all var(--transition-fast);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .badge--blue {
   background: var(--accent-dim);

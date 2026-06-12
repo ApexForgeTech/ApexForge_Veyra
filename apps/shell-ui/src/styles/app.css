@@ -319,16 +319,31 @@
   border-color: var(--border);
 }
 
-.persona-row__left  { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.persona-row__left  { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
 .persona-row__right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.persona-row__name  { font-size: 13px; font-weight: 600; color: var(--text-primary); white-space: nowrap; }
+.persona-row__name  {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
 .persona-route-icon { font-size: 14px; color: var(--text-muted); }
 
 .persona-detail-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 10px;
   padding: 5px 0;
+}
+.persona-detail-row .mono {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 .persona-detail-label {
   font-size: 10px;
@@ -775,4 +790,37 @@
   font-size: 10px;
   color: var(--text-muted);
   font-family: var(--font-mono);
+}
+
+/* ── Narrow sidebar mode ─────────────────────────────────
+   The dashboard normally lives in a ~360px GtkPaned pane next to the
+   browser. Stack label/value pairs and single-column the grids so nothing
+   overlaps or overflows horizontally. */
+@media (max-width: 520px) {
+  .app-panel { padding: 12px 10px; }
+  .app-main__topbar { padding: 8px 12px; }
+
+  .persona-row { padding: 8px 10px; }
+
+  /* The ephemeral badge crowds out persona names in the narrow pane; the
+     same fact is shown as "Memory Enclave: RAM Only" in the details card. */
+  .persona-row__left .badge { display: none; }
+
+  .persona-detail-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+  }
+  .persona-detail-row .mono {
+    white-space: normal;
+    word-break: break-all;
+  }
+
+  .route-stat-grid { grid-template-columns: 1fr; }
+  .osint-actions { grid-template-columns: 1fr; }
+
+  .security-flag-row,
+  .ai-cap-row {
+    gap: 10px;
+  }
 }

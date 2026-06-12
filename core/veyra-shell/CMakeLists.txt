@@ -85,7 +85,6 @@ if(NPM_EXECUTABLE)
     COMMENT "Building Phase 9 React shell UI"
   )
   add_custom_target(veyra_shell_ui ALL DEPENDS ${VEYRA_SHELL_UI_DIST}/index.html)
-  add_dependencies(veyra_shell veyra_shell_ui)
 else()
   message(WARNING "npm not found. Shell UI (Phase 9) will not be built automatically. "
                   "Run 'npm install && npm run build' in apps/shell-ui/ manually.")
@@ -130,6 +129,10 @@ target_link_libraries(veyra_shell
 )
 
 add_dependencies(veyra_shell veyra_route_engine veyra_artifact_scan veyra_tool_bridge)
+
+if(NPM_EXECUTABLE)
+  add_dependencies(veyra_shell veyra_shell_ui)
+endif()
 
 # Phase 10: stage the Python AI orchestrator next to the shell binary so it can
 # be launched with --ai-orchestrator-script=<build>/veyra_ai_orchestrator.py
