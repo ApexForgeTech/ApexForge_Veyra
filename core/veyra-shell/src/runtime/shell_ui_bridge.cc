@@ -86,6 +86,7 @@ bool ParseDashboardAction(const std::string& json, DashboardAction* action,
     return false;
   }
 
+  GetJsonString(obj, "persona_id", action->persona_id);
   GetJsonString(obj, "route_profile_id", action->route_profile_id);
   GetJsonString(obj, "tool_id", action->tool_id);
   GetJsonString(obj, "url", action->navigate_url);

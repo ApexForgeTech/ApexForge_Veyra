@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apexforge.local/schemas/persona.schema.json",
+  "title": "Veyra Persona",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "display_name",
+    "storage_partition",
+    "route_profile_id",
+    "fingerprint_profile_id",
+    "timezone_profile",
+    "locale_profile",
+    "extension_policy_id",
+    "ai_memory_scope",
+    "ai_policy_id",
+    "osint_policy_id",
+    "security_mode",
+    "ephemeral"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "storage_partition": {
+      "type": "string",
+      "minLength": 1
+    },
+    "route_profile_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fingerprint_profile_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timezone_profile": {
+      "type": "string",
+      "minLength": 1
+    },
+    "locale_profile": {
+      "type": "string",
+      "minLength": 1
+    },
+    "extension_policy_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ai_memory_scope": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ai_policy_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "osint_policy_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "security_mode": {
+      "type": "string",
+      "enum": [
+        "casual",
+        "hardened",
+        "ghost",
+        "redteam",
+        "airgap"
+      ]
+    },
+    "ephemeral": {
+      "type": "boolean"
+    },
+    "notes": {
+      "type": "string"
+    }
+  }
+}

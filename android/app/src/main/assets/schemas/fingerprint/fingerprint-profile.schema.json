@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apexforge.local/schemas/fingerprint-profile.schema.json",
+  "title": "Veyra Fingerprint Profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "display_name",
+    "canvas_noise",
+    "webgl_vendor",
+    "webgl_renderer",
+    "audio_noise",
+    "hardware_concurrency",
+    "device_memory",
+    "platform",
+    "screen_width",
+    "screen_height",
+    "color_depth",
+    "device_pixel_ratio"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "canvas_noise": {
+      "type": "string",
+      "enum": ["none", "subtle", "aggressive"]
+    },
+    "webgl_vendor": {
+      "type": "string",
+      "minLength": 1
+    },
+    "webgl_renderer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "audio_noise": {
+      "type": "string",
+      "enum": ["none", "subtle"]
+    },
+    "hardware_concurrency": {
+      "type": "number"
+    },
+    "device_memory": {
+      "type": "number"
+    },
+    "platform": {
+      "type": "string",
+      "minLength": 1
+    },
+    "screen_width": {
+      "type": "number"
+    },
+    "screen_height": {
+      "type": "number"
+    },
+    "color_depth": {
+      "type": "number"
+    },
+    "device_pixel_ratio": {
+      "type": "number"
+    },
+    "notes": {
+      "type": "string"
+    }
+  }
+}

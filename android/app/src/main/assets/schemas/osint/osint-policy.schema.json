@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apexforge.local/schemas/osint-policy.schema.json",
+  "title": "Veyra OSINT Policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "display_name",
+    "enabled",
+    "require_route",
+    "allow_whois",
+    "allow_dns",
+    "allow_archive",
+    "allow_username_search",
+    "allow_active_probing",
+    "max_targets_per_case",
+    "max_username_sites",
+    "retain_cases"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "require_route": {
+      "type": "boolean",
+      "description": "If true, all network egress must traverse the persona's proxy route; lookups are refused when no usable proxy is active (leak prevention)."
+    },
+    "allow_whois": {
+      "type": "boolean"
+    },
+    "allow_dns": {
+      "type": "boolean"
+    },
+    "allow_archive": {
+      "type": "boolean"
+    },
+    "allow_username_search": {
+      "type": "boolean"
+    },
+    "allow_active_probing": {
+      "type": "boolean",
+      "description": "Whether GET/HEAD probing of many third-party sites (e.g. username enumeration) is permitted."
+    },
+    "max_targets_per_case": {
+      "type": "number"
+    },
+    "max_username_sites": {
+      "type": "number"
+    },
+    "retain_cases": {
+      "type": "boolean"
+    },
+    "notes": {
+      "type": "string"
+    }
+  }
+}

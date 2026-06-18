@@ -60,3 +60,7 @@ venv/
 .idea/
 .vscode/
 *.swp
+
+# Veyra Android signing secrets
+android/keystore.properties
+!.Makefile

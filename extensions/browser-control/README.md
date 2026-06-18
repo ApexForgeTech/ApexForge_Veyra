@@ -118,7 +118,11 @@ Every selector argument accepts three forms:
 | `select <selector>\|<value>` | Choose a `<select>` option |
 | `submit <selector>` | Submit the enclosing form |
 | `scroll <selector>` | Scroll element into view |
-| `scroll-by <x>\|<y>` | Scroll the window |
+| `scroll-by <x>\|<y>` | Scroll the window by an offset |
+| `scroll-up` / `scroll-down` `[px]` | Smooth-scroll vertically (default ~300px) |
+| `scroll-left` / `scroll-right` `[px]` | Smooth-scroll horizontally |
+| `page-up` / `page-down` `[px]` | Scroll ~one viewport |
+| `scroll-top` / `scroll-bottom` | Jump to top / bottom of the page |
 
 ### Queries / introspection
 | Command | Result |
@@ -168,8 +172,36 @@ Every selector argument accepts three forms:
 | `panel <on\|off\|toggle>` | Show/hide the Veyra dashboard side panel |
 | `theme [id]` | List themes, or switch (`veyra-dark`, `veyra-light`, `midnight-purple`, `ghost-green`) |
 | `search-engine [id]` | List/set the address-bar search engine (`duckduckgo`, `google`, `bing`, `brave`, `startpage`) |
+| `startup-page [url]` | Get/set the page opened in the first tab at launch (default `veyra:start`) |
+| `default-route [id]` | Get/set the route applied at launch (`direct_isp`, `vpn_tunnel`, `tor_bridge`, `i2p_network`, `chained_ops`, or `none`) |
+| `history` | List this persona's recent history `{url,title,epoch}` |
+| `history-clear` | Wipe this persona's history |
+| `clear-data` | Clear cookies/cache/site-data for the session |
+| `settings` / `site-info` | Open Settings (in a tab) / Site-information (popover) |
 
-Panel visibility, theme and search engine persist in `~/.config/veyra/ui.conf`.
+UI prefs (theme, search engine, startup page, default route, panel) persist in
+`~/.config/veyra/ui.conf`. Per-persona state lives in
+`~/.local/share/veyra/profiles/<persona>/`: `history.tsv`, `logins.tsv`
+(captured passwords, URL-escaped, 0600). Ghost/ephemeral personas record
+neither. Cookies persist per persona via the security policy's cookie store.
+
+The internal `veyra:` scheme serves: `veyra:start` (start page / new tab),
+`veyra:settings` (in-tab settings, like chrome://settings), `veyra:history`
+(in-tab history). Settings controls navigate to `veyra:set?<key>=<value>`
+endpoints which apply on the UI thread and redirect back — no separate windows.
+
+**Keyboard:** Ctrl+T new tab · Ctrl+W close · Ctrl+L address · Ctrl+R/F5 reload ·
+Ctrl+H history · Ctrl+, settings · Alt+Home start page · Ctrl+Tab / Ctrl+PageDown
+next tab · Ctrl+Shift+Tab / Ctrl+PageUp prev tab · Ctrl+F find · Ctrl+P print ·
+Ctrl++/−/0 zoom · Ctrl+Q quit.
+
+**Control commands** for these: `find <text>`, `zoom <in|out|reset>`, `print`.
+Settings exposes "Set as default browser" (installs a `.desktop` launcher and
+runs xdg-settings). Find bar, zoom and print operate on the active tab.
+
+**Passwords:** login-form submits are captured per persona and auto-filled on
+return (basic; plaintext store — a real release should use libsecret/keyring).
+Clear via Settings → "Clear saved passwords" or `veyra:set?clearpasswords=1`.
 
 ### Capture & scripting
 | Command | Effect |

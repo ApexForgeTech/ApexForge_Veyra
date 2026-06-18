@@ -165,6 +165,7 @@ declare global {
 }
 
 export type VeyraAction =
+  | { action: 'switch_persona'; persona_id: string }
   | { action: 'switch_route'; route_profile_id: string }
   | { action: 'invoke_tool'; tool_id: string; args: string[] }
   | { action: 'navigate'; url: string }

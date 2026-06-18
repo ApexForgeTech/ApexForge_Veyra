@@ -43,10 +43,10 @@ export default function CommandPalette({ state, onClose }: Props) {
     {
       id: 'nav:blank',
       label: 'Spawn Clean Sandbox Tab',
-      description: 'Creates a new empty guest page frame (about:blank)',
+      description: 'Opens the Veyra start page',
       category: 'Browser',
       action: () => {
-        if (isVeyraHosted()) postVeyraAction({ action: 'open_tab', url: 'about:blank' })
+        if (isVeyraHosted()) postVeyraAction({ action: 'open_tab', url: 'veyra:start' })
         onClose()
       },
     },

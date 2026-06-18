@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apexforge.local/schemas/route-profile.schema.json",
+  "title": "Veyra Route Profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "display_name",
+    "route_type",
+    "dns_policy",
+    "webrtc_policy",
+    "leak_prevention_level",
+    "hops"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "route_type": {
+      "type": "string",
+      "enum": [
+        "direct",
+        "vpn",
+        "tor",
+        "residential_proxy",
+        "chained",
+        "i2p"
+      ]
+    },
+    "dns_policy": {
+      "type": "string",
+      "enum": [
+        "system",
+        "isolated",
+        "proxy_bound"
+      ]
+    },
+    "webrtc_policy": {
+      "type": "string",
+      "enum": [
+        "allow",
+        "restrict",
+        "disable"
+      ]
+    },
+    "leak_prevention_level": {
+      "type": "string",
+      "enum": [
+        "standard",
+        "elevated",
+        "maximum"
+      ]
+    },
+    "hops": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "notes": {
+      "type": "string"
+    }
+  }
+}

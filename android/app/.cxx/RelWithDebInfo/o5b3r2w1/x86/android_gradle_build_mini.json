@@ -1,0 +1,27 @@
+{
+  "buildFiles": [
+    "/mnt/zboth/ApexForge_Veyra/android/app/src/main/cpp/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/mnt/zboth/android-sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/mnt/zboth/ApexForge_Veyra/android/app/.cxx/RelWithDebInfo/o5b3r2w1/x86",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/mnt/zboth/android-sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/mnt/zboth/ApexForge_Veyra/android/app/.cxx/RelWithDebInfo/o5b3r2w1/x86",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "veyra_native::@6890427a1f51a3e7e1df": {
+      "artifactName": "veyra_native",
+      "abi": "x86",
+      "output": "/mnt/zboth/ApexForge_Veyra/android/app/build/intermediates/cxx/RelWithDebInfo/o5b3r2w1/obj/x86/libveyra_native.so",
+      "runtimeFiles": []
+    }
+  }
+}

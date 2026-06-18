@@ -155,10 +155,12 @@ fn parse_profile_record(fields: &[&str]) -> Option<ProfileRecord> {
 fn build_route_state(profile: &ProfileRecord, runtime_root: &str) -> RouteState {
     let proxy_uri = match profile.route_type.as_str() {
         "direct" => String::new(),
-        "vpn" => "socks5://127.0.0.1:19090".to_string(),
-        "tor" => "socks5://127.0.0.1:19050".to_string(),
-        "residential_proxy" => "http://127.0.0.1:19180".to_string(),
-        "chained" => "socks5://127.0.0.1:19110".to_string(),
+        "vpn" => "socks5://127.0.0.1:1080".to_string(),
+        // Standard local router ports so a real Tor daemon / I2P router works
+        // out of the box: system Tor on 9050, I2P HTTP proxy on 4444.
+        "tor" => "socks5://127.0.0.1:9050".to_string(),
+        "residential_proxy" => "http://127.0.0.1:8080".to_string(),
+        "chained" => "socks5://127.0.0.1:9050".to_string(),
         "i2p" => "http://127.0.0.1:4444".to_string(),
         _ => String::new(),
     };

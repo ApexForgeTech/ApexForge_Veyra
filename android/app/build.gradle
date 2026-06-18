@@ -1,0 +1,125 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace 'com.apexforge.veyra'
+    compileSdk 34
+    ndkVersion "27.3.13750724"
+
+    defaultConfig {
+        applicationId "com.apexforge.veyra"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+
+        externalNativeBuild {
+            cmake {
+                cppFlags "-std=c++17"
+                arguments "-DANDROID_STL=c++_shared"
+            }
+        }
+    }
+
+    // Release signing: credentials come from android/keystore.properties
+    // (git-ignored) or env vars; the keystore defaults to /mnt/zboth/veyra-key.jks.
+    // If the keystore is missing we fall back to the debug key so the build
+    // never fails — the APK is always signed and installable.
+    def ksPropsFile = rootProject.file("keystore.properties")
+    def ksProps = new Properties()
+    if (ksPropsFile.exists()) { ksPropsFile.withInputStream { ksProps.load(it) } }
+    def ksPath = System.getenv("VEYRA_KEYSTORE_FILE") ?:
+            (ksProps.getProperty("storeFile") ?: "/mnt/zboth/veyra-key.jks")
+    // Use the real release key only when credentials are actually provided
+    // (properties file or env) — never guess a password. Otherwise debug-sign.
+    def haveCreds = ksPropsFile.exists() || System.getenv("VEYRA_KEYSTORE_PASSWORD") != null
+    def veyraKeystoreReady = haveCreds && file(ksPath).exists()
+
+    signingConfigs {
+        release {
+            if (veyraKeystoreReady) {
+                storeFile file(ksPath)
+                storePassword System.getenv("VEYRA_KEYSTORE_PASSWORD") ?:
+                        (ksProps.getProperty("storePassword") ?: "veyra")
+                keyAlias System.getenv("VEYRA_KEY_ALIAS") ?:
+                        (ksProps.getProperty("keyAlias") ?: "veyra")
+                keyPassword System.getenv("VEYRA_KEY_PASSWORD") ?:
+                        (ksProps.getProperty("keyPassword") ?: "veyra")
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            minifyEnabled false
+            // Real release key when available, otherwise debug key so the
+            // output is still a signed, installable APK.
+            signingConfig veyraKeystoreReady ? signingConfigs.release : signingConfigs.debug
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path "src/main/cpp/CMakeLists.txt"
+            version "3.22.1"
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+// Single source of truth for the UI: the React app in apps/shell-ui is built
+// once and its dist/ is copied into the Android assets automatically before
+// every build, so the UI is never edited/maintained in two places.
+def shellUiDir = file("${rootDir}/../apps/shell-ui")
+
+task buildVeyraUI(type: Exec) {
+    group = "Veyra"
+    description = "Builds the React UI (apps/shell-ui) for the Android assets"
+    workingDir shellUiDir
+
+    // Only install when node_modules is missing — keeps incremental builds fast.
+    // Cross-platform: pick the right shell for the OS.
+    if (org.gradle.internal.os.OperatingSystem.current().isWindows()) {
+        commandLine "cmd", "/c", "if not exist node_modules ( npm install --prefer-offline --no-audit ) && npm run build"
+    } else {
+        commandLine "bash", "-c", "if [ ! -d node_modules ]; then npm install --prefer-offline --no-audit; fi && npm run build"
+    }
+
+    // Rebuild only when UI sources actually change.
+    inputs.dir(file("${shellUiDir}/src"))
+    inputs.file(file("${shellUiDir}/package.json"))
+    inputs.file(file("${shellUiDir}/start.html"))
+    outputs.dir(file("${shellUiDir}/dist"))
+}
+
+task syncVeyraAssets(type: Copy) {
+    dependsOn buildVeyraUI
+    group = "Veyra"
+    description = "Copies the built UI + schemas into Android assets"
+
+    // Clear stale UI assets so removed files don't linger.
+    doFirst { delete file("src/main/assets/ui") }
+
+    from("${rootDir}/../apps/shell-ui/dist") { into "ui" }
+    from("${rootDir}/../apps/shell-ui/start.html") { into "." }
+    from("${rootDir}/../schemas") { into "schemas" }
+    // Ship the browser-control extension so mobile gets the same content-script
+    // automation/control surface as desktop.
+    from("${rootDir}/../extensions") { into "extensions" }
+    into "src/main/assets"
+}
+
+preBuild.dependsOn syncVeyraAssets
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+}

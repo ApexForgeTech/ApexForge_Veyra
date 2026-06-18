@@ -19,6 +19,15 @@ struct BrowserEngineConfig {
   std::string artifact_scan_binary_path;
   std::string fingerprint_script;
 
+  // Persona this window runs as. Scopes per-profile on-disk state (history,
+  // and the cookie store via the security policy) so profiles never mix.
+  std::string persona_id;
+  // True for ghost/ephemeral personas — history is never written for them.
+  bool ephemeral_persona = false;
+  // User-Agent strategy: "auto" (branded for casual, blend-in for hardened),
+  // "branded" (always show Veyra), or "blendin" (always uniform anti-fingerprint).
+  std::string user_agent_mode = "auto";
+
   // Phase 9: Dashboard panel configuration.
   // shell_ui_dist_path: path to the built React app's dist/ directory.
   // dashboard_state_script: pre-built JS that injects __VEYRA_STATE__ before React boots.
@@ -59,6 +68,8 @@ class BrowserEngine {
                                    const std::vector<PermissionEvaluation>& permission_report,
                                    std::string* error) = 0;
   virtual std::string GetCurrentUrl(const std::string& tab_id) const = 0;
+  // Optional: runtime persona switch (engines that don't support it no-op).
+  virtual void SetActivePersona(const std::string& /*persona_id*/, bool /*ephemeral*/) {}
   virtual void PushDashboardState(const std::string& state_json) const = 0;
   virtual void RequestActiveTabText(
       std::function<void(const std::string& text)> callback) = 0;
@@ -70,5 +81,10 @@ class BrowserEngine {
 std::unique_ptr<BrowserEngine> CreateBrowserEngine(std::string* error);
 
 }  // namespace veyra
+
+#ifdef __ANDROID__
+#include <jni.h>
+extern "C" void SetAndroidJniContext(JNIEnv* env, jobject activity);
+#endif
 
 #endif  // VEYRA_ENGINE_BROWSER_ENGINE_H_

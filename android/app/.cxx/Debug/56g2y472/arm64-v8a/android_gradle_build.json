@@ -1,0 +1,38 @@
+{
+  "buildFiles": [
+    "/mnt/zboth/ApexForge_Veyra/android/app/src/main/cpp/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/mnt/zboth/android-sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/mnt/zboth/ApexForge_Veyra/android/app/.cxx/Debug/56g2y472/arm64-v8a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/mnt/zboth/android-sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/mnt/zboth/ApexForge_Veyra/android/app/.cxx/Debug/56g2y472/arm64-v8a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "veyra_native::@6890427a1f51a3e7e1df": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "veyra_native",
+      "output": "/mnt/zboth/ApexForge_Veyra/android/app/build/intermediates/cxx/Debug/56g2y472/obj/arm64-v8a/libveyra_native.so",
+      "runtimeFiles": []
+    }
+  },
+  "toolchains": {
+    "toolchain": {
+      "cCompilerExecutable": "/mnt/zboth/android-sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/bin/clang.lld",
+      "cppCompilerExecutable": "/mnt/zboth/android-sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++.lld"
+    }
+  },
+  "cFileExtensions": [],
+  "cppFileExtensions": [
+    "cc"
+  ]
+}

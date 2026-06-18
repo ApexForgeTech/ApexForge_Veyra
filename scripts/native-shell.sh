@@ -60,6 +60,7 @@ COMMON_SRC=(
   "$ROOT_DIR/core/veyra-shell/src/runtime/profile_manager.cc"
   "$ROOT_DIR/core/veyra-shell/src/runtime/profile_registry.cc"
   "$ROOT_DIR/core/veyra-shell/src/runtime/route_service.cc"
+  "$ROOT_DIR/core/veyra-shell/src/runtime/router_supervisor.cc"
   "$ROOT_DIR/core/veyra-shell/src/runtime/runtime_policy.cc"
   "$ROOT_DIR/core/veyra-shell/src/runtime/security_policy_engine.cc"
   "$ROOT_DIR/core/veyra-shell/src/runtime/session_partition.cc"

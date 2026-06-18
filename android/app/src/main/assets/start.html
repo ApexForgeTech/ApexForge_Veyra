@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Veyra</title>
+<style>
+  :root{
+    --bg:#05080a;--panel:#0b121b;--panel2:#101a27;--line:#1d314a;
+    --text:#eef6ff;--soft:#94a8bd;--muted:#5d7288;--accent:#55bfff;
+    --ok:#35e08d;--warn:#ffc04d;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  html,body{min-height:100%;}
+  body{
+    min-height:100vh;color:var(--text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    background:
+      linear-gradient(180deg,rgba(85,191,255,.08),transparent 34%),
+      linear-gradient(145deg,#05080a 0%,#08111d 58%,#0a131c 100%);
+    display:flex;align-items:center;justify-content:center;padding:24px 18px 32px;
+    -webkit-user-select:none;user-select:none;
+  }
+  main{width:100%;max-width:560px;display:flex;flex-direction:column;gap:20px;}
+  .top{display:flex;align-items:center;justify-content:space-between;gap:14px;}
+  .brand{display:flex;align-items:center;gap:12px;min-width:0;}
+  .mark{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;
+        color:var(--accent);background:linear-gradient(145deg,#0f1b2b,#07101a);
+        border:1px solid #25415f;box-shadow:0 10px 28px rgba(0,0,0,.28);}
+  .mark svg{width:25px;height:25px;}
+  .word{font-size:18px;font-weight:800;letter-spacing:.14em;line-height:1;}
+  .caption{margin-top:5px;color:var(--soft);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .state{display:flex;align-items:center;gap:7px;color:var(--ok);font-size:12px;font-weight:700;
+         background:rgba(53,224,141,.09);border:1px solid rgba(53,224,141,.18);
+         padding:8px 10px;border-radius:999px;white-space:nowrap;}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 12px var(--ok);}
+  form{display:flex;align-items:center;gap:10px;background:rgba(11,18,27,.92);border:1px solid #263d5e;
+       border-radius:18px;padding:7px 7px 7px 16px;box-shadow:0 18px 48px rgba(0,0,0,.32);}
+  .search-icon{color:var(--accent);font-size:18px;font-weight:700;}
+  input{min-width:0;flex:1;background:transparent;border:0;color:var(--text);font-size:16px;outline:none;padding:12px 0;}
+  input::placeholder{color:var(--muted);}
+  button{width:42px;height:42px;border:0;border-radius:13px;background:var(--accent);color:#03101b;
+         font-size:20px;font-weight:800;}
+  .panel{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .metric,.tile{background:rgba(11,18,27,.74);border:1px solid rgba(85,191,255,.16);
+                border-radius:14px;padding:13px;box-shadow:0 10px 30px rgba(0,0,0,.18);}
+  .label{display:block;color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;}
+  .value{display:block;margin-top:6px;color:var(--text);font-size:14px;font-weight:750;line-height:1.3;}
+  .quick{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
+  .tile{text-decoration:none;color:var(--soft);display:flex;align-items:center;gap:11px;min-height:58px;}
+  .tile:active{background:#111e2f;border-color:rgba(85,191,255,.42);}
+  .glyph{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;
+         color:var(--accent);background:rgba(85,191,255,.1);font-size:13px;font-weight:800;flex:none;}
+  .name{font-size:13px;font-weight:650;color:var(--text);}
+  .url{font-size:11px;color:var(--muted);margin-top:2px;}
+  @media(max-width:420px){
+    body{align-items:flex-start;padding-top:34px;}
+    .top{align-items:flex-start;}
+    .state{display:none;}
+    .panel{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+  <main>
+    <section class="top">
+      <div class="brand">
+        <div class="mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M12 3.2 19 5.8v5.4c0 4.4-2.8 8.3-7 9.6-4.2-1.3-7-5.2-7-9.6V5.8l7-2.6Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+            <path d="m8.8 12.1 2.2 2.2 4.6-4.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div>
+          <div class="word">VEYRA</div>
+          <div class="caption">Private Android browser</div>
+        </div>
+      </div>
+      <div class="state"><span class="dot"></span>Guard closed</div>
+    </section>
+
+    <form id="f">
+      <span class="search-icon">/</span>
+      <input id="q" autocomplete="off" autocorrect="off" autocapitalize="off"
+        placeholder="Search or enter address" enterkeyhint="go">
+      <button type="submit" aria-label="Go">&rsaquo;</button>
+    </form>
+
+    <section class="panel" aria-label="Session status">
+      <div class="metric"><span class="label">Route</span><span class="value">Direct session</span></div>
+      <div class="metric"><span class="label">Security panel</span><span class="value">Closed by default</span></div>
+    </section>
+
+    <section class="quick" aria-label="Quick links">
+      <a class="tile" href="https://duckduckgo.com"><span class="glyph">DDG</span><span><span class="name">DuckDuckGo</span><span class="url">duckduckgo.com</span></span></a>
+      <a class="tile" href="https://en.wikipedia.org"><span class="glyph">W</span><span><span class="name">Wikipedia</span><span class="url">wikipedia.org</span></span></a>
+      <a class="tile" href="https://github.com"><span class="glyph">GH</span><span><span class="name">GitHub</span><span class="url">github.com</span></span></a>
+      <a class="tile" href="https://news.ycombinator.com"><span class="glyph">HN</span><span><span class="name">Hacker News</span><span class="url">news.ycombinator.com</span></span></a>
+    </section>
+  </main>
+  <script>
+    var f=document.getElementById('f'), q=document.getElementById('q');
+    f.addEventListener('submit',function(e){
+      e.preventDefault();
+      var v=q.value.trim(); if(!v) return;
+      if(v.indexOf(' ')<0 && v.indexOf('.')>0){
+        location.href=(v.indexOf('://')<0?'https://':'')+v;
+      } else if(window.Veyra && window.Veyra.searchUrl){
+        location.href=window.Veyra.searchUrl(v);
+      } else {
+        location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);
+      }
+    });
+  </script>
+</body>
+</html>

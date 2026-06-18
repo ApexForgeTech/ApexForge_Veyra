@@ -64,8 +64,7 @@ function modeColor(mode: string): string {
 export default function PersonaSwitcher({ personas, active }: Props) {
   const switchPersona = (id: string) => {
     if (!isVeyraHosted()) return
-    console.log('Requesting switch context for persona:', id)
-    postVeyraAction({ action: 'request_state_refresh' })
+    postVeyraAction({ action: 'switch_persona', persona_id: id } as never)
   }
 
   return (
@@ -155,7 +154,7 @@ export default function PersonaSwitcher({ personas, active }: Props) {
             <button
               className="btn btn--primary"
               style={{ flex: 1, justifyContent: 'center', paddingTop: 8, paddingBottom: 8 }}
-              onClick={() => postVeyraAction({ action: 'open_tab', url: 'about:blank' })}
+              onClick={() => postVeyraAction({ action: 'open_tab', url: 'veyra:start' })}
               title="Open a new tab"
             >
               <svg style={{ width: 14, height: 14, marginRight: 4 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

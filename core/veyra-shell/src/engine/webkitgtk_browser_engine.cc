@@ -5,6 +5,7 @@
 #include "veyra/runtime/shell_ui_bridge.h"
 
 #include <gdk/gdkkeysyms.h>
+#include <glib/gstdio.h>
 #include <gtk/gtk.h>
 #include <webkit2/webkit2.h>
 
@@ -13,6 +14,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cctype>
 #include <cstdlib>
@@ -63,7 +65,26 @@ struct WebKitGtkRuntimeState {
   GtkCssProvider* theme_provider = nullptr;
   std::string theme_id = "veyra-dark";
   std::string search_engine_id = "duckduckgo";
+  std::string startup_page = "veyra:start";
+  std::string default_route_id;  // empty => leave the persona's route as-is
+  std::string user_agent_mode = "auto";  // auto | branded | blendin
+  std::string security_level = "standard";  // standard | safer | safest (JS protection)
+  bool https_only = false;
+  bool extensions_enabled = true;   // browser-control content script
+  bool autofill_enabled = true;     // password autofill on load
+  // Manual network proxy (overrides the persona route when set). Empty = use
+  // the persona's route/system default. e.g. socks5://127.0.0.1:9050 (Tor),
+  // http://127.0.0.1:4444 (I2P), or any http/socks proxy.
+  std::string manual_proxy;
   bool dashboard_visible = false;
+  std::string persona_id = "default";
+  bool ephemeral_persona = false;
+  // Singleton dialogs: clicking the padlock / a menu item again raises the
+  // existing window instead of spawning a duplicate (Chrome-like).
+  GtkWidget* site_info_popover = nullptr;
+  GtkWidget* find_bar = nullptr;
+  GtkWidget* find_entry = nullptr;
+  GtkWidget* find_label = nullptr;
   std::string base_window_title;
   std::unordered_map<WebKitWebView*, TabChrome> tab_chrome;
   WebKitWebsiteDataManager* website_data_manager = nullptr;
@@ -84,6 +105,15 @@ void SetError(std::string* error, const std::string& message) {
     *error = message;
   }
 }
+
+// Defined later in this namespace; needed by the dialog helpers above them.
+WebKitWebView* ActiveView(WebKitGtkRuntimeState* state);
+std::string ExtractOriginForPrompt(const std::string& url);
+void OpenVeyraPageTab(WebKitGtkRuntimeState* state, const char* page);
+void AutofillLogin(WebKitGtkRuntimeState* state, WebKitWebView* view);
+void ShowFindBar(WebKitGtkRuntimeState* state);
+void PrintActiveView(WebKitGtkRuntimeState* state);
+void ZoomActiveView(WebKitGtkRuntimeState* state, double delta_or_reset, bool reset);
 
 bool IsValidUri(const std::string& url) {
   return !url.empty() && g_uri_is_valid(url.c_str(), G_URI_FLAGS_NONE, nullptr);
@@ -329,6 +359,22 @@ const SearchEngineDef& LookupSearchEngine(const std::string& engine_id) {
   return kSearchEngines[0];
 }
 
+// Seed route profiles (schemas/seed/default-route-profiles.json). The empty
+// id keeps the persona's own configured route.
+struct RouteChoiceDef {
+  const char* id;
+  const char* label;
+};
+
+const RouteChoiceDef kRouteChoices[] = {
+    {"", "Persona default"},
+    {"direct_isp", "Direct (ISP)"},
+    {"vpn_tunnel", "VPN tunnel"},
+    {"tor_bridge", "Tor"},
+    {"i2p_network", "I2P network"},
+    {"chained_ops", "Chained (VPN→Tor)"},
+};
+
 void ReplaceAllInPlace(std::string* text, const std::string& from, const std::string& to) {
   for (std::size_t pos = 0; (pos = text->find(from, pos)) != std::string::npos; pos += to.size()) {
     text->replace(pos, from.size(), to);
@@ -358,6 +404,33 @@ void LoadUiPrefs(WebKitGtkRuntimeState* state) {
       state->search_engine_id = value;
       g_free(value);
     }
+    value = g_key_file_get_string(key_file, "ui", "startup_page", nullptr);
+    if (value != nullptr) {
+      if (*value != '\0') state->startup_page = value;
+      g_free(value);
+    }
+    value = g_key_file_get_string(key_file, "ui", "default_route", nullptr);
+    if (value != nullptr) {
+      state->default_route_id = value;
+      g_free(value);
+    }
+    value = g_key_file_get_string(key_file, "ui", "ua_mode", nullptr);
+    if (value != nullptr) { if (*value != '\0') state->user_agent_mode = value; g_free(value); }
+    value = g_key_file_get_string(key_file, "ui", "security_level", nullptr);
+    if (value != nullptr) { if (*value != '\0') state->security_level = value; g_free(value); }
+    {
+      GError* ge = nullptr;
+      gboolean ho = g_key_file_get_boolean(key_file, "ui", "https_only", &ge);
+      if (ge == nullptr) state->https_only = ho; else g_error_free(ge);
+    }
+    { GError* ge = nullptr;
+      gboolean v = g_key_file_get_boolean(key_file, "ui", "extensions_enabled", &ge);
+      if (ge == nullptr) state->extensions_enabled = v; else g_error_free(ge); }
+    { GError* ge = nullptr;
+      gboolean v = g_key_file_get_boolean(key_file, "ui", "autofill_enabled", &ge);
+      if (ge == nullptr) state->autofill_enabled = v; else g_error_free(ge); }
+    value = g_key_file_get_string(key_file, "ui", "manual_proxy", nullptr);
+    if (value != nullptr) { state->manual_proxy = value; g_free(value); }
     GError* gerror = nullptr;
     const gboolean show_panel = g_key_file_get_boolean(key_file, "ui", "show_panel", &gerror);
     if (gerror == nullptr) {
@@ -378,6 +451,14 @@ void SaveUiPrefs(const WebKitGtkRuntimeState* state) {
   GKeyFile* key_file = g_key_file_new();
   g_key_file_set_string(key_file, "ui", "theme", state->theme_id.c_str());
   g_key_file_set_string(key_file, "ui", "search_engine", state->search_engine_id.c_str());
+  g_key_file_set_string(key_file, "ui", "startup_page", state->startup_page.c_str());
+  g_key_file_set_string(key_file, "ui", "default_route", state->default_route_id.c_str());
+  g_key_file_set_string(key_file, "ui", "ua_mode", state->user_agent_mode.c_str());
+  g_key_file_set_string(key_file, "ui", "security_level", state->security_level.c_str());
+  g_key_file_set_boolean(key_file, "ui", "https_only", state->https_only);
+  g_key_file_set_boolean(key_file, "ui", "extensions_enabled", state->extensions_enabled);
+  g_key_file_set_boolean(key_file, "ui", "autofill_enabled", state->autofill_enabled);
+  g_key_file_set_string(key_file, "ui", "manual_proxy", state->manual_proxy.c_str());
   g_key_file_set_boolean(key_file, "ui", "show_panel", state->dashboard_visible);
   g_key_file_save_to_file(key_file, path.c_str(), nullptr);
   g_key_file_free(key_file);
@@ -525,12 +606,89 @@ std::string BuildVeyraCss(const VeyraThemeDef& theme) {
     }
     menu, .menu {
       background-color: @SURFACE@;
+      background-image: none;
       color: @TEXT@;
       border: 1px solid @BORDER@;
+      padding: 6px 0;
     }
-    menu > menuitem { color: @TEXT@; padding: 6px 10px; }
-    menu > menuitem:hover { background-color: @ACCENT_SOFT@; }
-    menu > menuitem:disabled { color: @MUTED@; }
+    menu > menuitem, .menu > menuitem {
+      background-color: transparent;
+      background-image: none;
+      color: @TEXT@;
+      padding: 7px 14px;
+    }
+    menu > menuitem:hover, .menu > menuitem:hover {
+      background-color: @ACCENT_SOFT@;
+      background-image: none;
+      color: @TEXT@;
+    }
+    menu > menuitem:disabled, .menu > menuitem:disabled { color: @MUTED@; }
+    menu separator, .menu separator {
+      background-color: @BORDER@;
+      margin: 5px 8px;
+      min-height: 1px;
+    }
+    menu check, menu radio { color: @ACCENT@; }
+
+    /* Native dialogs (settings / history / site info) */
+    .veyra-dialog, .veyra-dialog > box { background-color: @BG@; color: @TEXT@; }
+    .veyra-dialog label { color: @TEXT@; }
+    .veyra-dialog .veyra-dim-label { color: @TEXT2@; }
+    .veyra-dialog .veyra-section {
+      color: @ACCENT@;
+      font-weight: 700;
+      font-size: 12px;
+    }
+    .veyra-dialog button {
+      background-color: @SURFACE@;
+      background-image: none;
+      color: @TEXT@;
+      border: 1px solid @BORDER@;
+      border-radius: 8px;
+      padding: 6px 14px;
+      box-shadow: none;
+    }
+    .veyra-dialog button:hover { background-color: @ACCENT_SOFT@; }
+    .veyra-dialog entry {
+      background-color: @ENTRY_BG@;
+      background-image: none;
+      color: @TEXT@;
+      border: 1px solid @BORDER@;
+      border-radius: 8px;
+      padding: 6px 10px;
+      caret-color: @ACCENT@;
+    }
+    .veyra-dialog entry:focus { border-color: @ACCENT@; }
+    .veyra-dialog treeview, .veyra-dialog treeview.view {
+      background-color: @SURFACE@;
+      color: @TEXT@;
+    }
+    .veyra-dialog treeview:selected, .veyra-dialog treeview.view:selected {
+      background-color: @ACCENT_STRONG@;
+      color: @TEXT@;
+    }
+    .veyra-dialog treeview header button {
+      background-color: @BG2@;
+      color: @TEXT2@;
+      border: none;
+      border-bottom: 1px solid @BORDER@;
+      border-radius: 0;
+    }
+    .veyra-dialog combobox button.combo {
+      background-color: @SURFACE@;
+      background-image: none;
+      color: @TEXT@;
+      border: 1px solid @BORDER@;
+      border-radius: 8px;
+    }
+    .veyra-dialog switch {
+      background-color: @SURFACE@;
+      border: 1px solid @BORDER@;
+    }
+    .veyra-dialog switch:checked { background-color: @ACCENT_STRONG@; }
+    .veyra-dialog switch slider { background-color: @TEXT2@; }
+    .veyra-dialog switch:checked slider { background-color: @ACCENT@; }
+    .veyra-dialog scrolledwindow { border: 1px solid @BORDER@; border-radius: 8px; }
   )css";
 
   ReplaceAllInPlace(&css, "@BG@", theme.bg);
@@ -587,6 +745,25 @@ void ApplyVeyraTheme(WebKitGtkRuntimeState* state, const std::string& theme_id) 
                                             GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
   state->theme_provider = provider;
   state->theme_id = theme->id;
+
+  // Mirror the chrome theme into the React dashboard so the panel palette
+  // follows along (globals.css has [data-veyra-theme=...] overrides).
+  if (state->dashboard_view != nullptr) {
+    const std::string js =
+        "document.documentElement.setAttribute('data-veyra-theme','" +
+        std::string(theme->id) + "');";
+    webkit_web_view_evaluate_javascript(state->dashboard_view, js.c_str(), -1, nullptr,
+                                        nullptr, nullptr, nullptr, nullptr);
+  }
+
+  // Re-render any open start pages so they pick up the new palette (the page
+  // HTML bakes in theme colors at serve time).
+  for (const auto& kv : state->tabs) {
+    const gchar* uri = webkit_web_view_get_uri(kv.second);
+    if (uri != nullptr && std::string(uri).rfind("veyra:", 0) == 0) {
+      webkit_web_view_reload(kv.second);
+    }
+  }
 }
 
 // Shows/hides the dashboard pane and keeps the menu checkbox + saved prefs
@@ -615,6 +792,1200 @@ void UpdateAddressPlaceholder(WebKitGtkRuntimeState* state) {
   const SearchEngineDef& engine = LookupSearchEngine(state->search_engine_id);
   const std::string placeholder = std::string("Search ") + engine.label + " or enter address";
   gtk_entry_set_placeholder_text(GTK_ENTRY(state->address_entry), placeholder.c_str());
+}
+
+
+// ── Browsing history (persistent personas only) ─────────────────────
+struct HistoryEntry {
+  gint64 epoch = 0;
+  std::string url;
+  std::string title;
+};
+
+std::string SanitizePathSegment(const std::string& value) {
+  std::string out;
+  for (char ch : value) {
+    out += (std::isalnum(static_cast<unsigned char>(ch)) || ch == '-' || ch == '_') ? ch : '_';
+  }
+  return out.empty() ? "default" : out;
+}
+
+// History is scoped per persona so profiles never share browsing trails.
+std::string HistoryPath(const std::string& persona_id) {
+  const gchar* data_dir = g_get_user_data_dir();
+  return std::string(data_dir != nullptr ? data_dir : ".") + "/veyra/profiles/" +
+         SanitizePathSegment(persona_id) + "/history.tsv";
+}
+
+void AppendHistoryEntry(const std::string& persona_id, const std::string& url,
+                        const std::string& title) {
+  if (url.empty() || url == "about:blank" || url.rfind("file:", 0) == 0 ||
+      url.rfind("veyra:", 0) == 0) {
+    return;
+  }
+  const std::string path = HistoryPath(persona_id);
+  const std::size_t slash = path.rfind('/');
+  if (slash != std::string::npos) {
+    g_mkdir_with_parents(path.substr(0, slash).c_str(), 0700);
+  }
+  std::ofstream out(path, std::ios::app);
+  if (!out.is_open()) {
+    return;
+  }
+  std::string clean_title = title;
+  for (char& ch : clean_title) {
+    if (ch == '\t' || ch == '\n') ch = ' ';
+  }
+  out << g_get_real_time() / G_USEC_PER_SEC << '\t' << url << '\t' << clean_title << '\n';
+}
+
+std::vector<HistoryEntry> LoadHistory(const std::string& persona_id, std::size_t max_entries) {
+  std::vector<HistoryEntry> entries;
+  std::ifstream in(HistoryPath(persona_id));
+  std::string line;
+  while (std::getline(in, line)) {
+    const std::size_t first_tab = line.find('\t');
+    const std::size_t second_tab =
+        first_tab == std::string::npos ? std::string::npos : line.find('\t', first_tab + 1);
+    if (first_tab == std::string::npos || second_tab == std::string::npos) {
+      continue;
+    }
+    HistoryEntry entry;
+    entry.epoch = g_ascii_strtoll(line.substr(0, first_tab).c_str(), nullptr, 10);
+    entry.url = line.substr(first_tab + 1, second_tab - first_tab - 1);
+    entry.title = line.substr(second_tab + 1);
+    entries.push_back(std::move(entry));
+  }
+  // Newest first; cap for the viewer.
+  std::reverse(entries.begin(), entries.end());
+  if (entries.size() > max_entries) {
+    entries.resize(max_entries);
+  }
+  return entries;
+}
+
+// ── Per-persona password store (basic) ──────────────────────────────
+// Lines: <origin>\t<user>\t<pass>, each field URL-escaped. Plaintext on disk —
+// a real release should move this to libsecret/keyring; documented as basic.
+std::string LoginsPath(const std::string& persona_id) {
+  const gchar* data_dir = g_get_user_data_dir();
+  return std::string(data_dir != nullptr ? data_dir : ".") + "/veyra/profiles/" +
+         SanitizePathSegment(persona_id) + "/logins.tsv";
+}
+
+void SaveLogin(const std::string& persona_id, const std::string& origin,
+               const std::string& user, const std::string& pass) {
+  if (origin.empty() || pass.empty()) {
+    return;
+  }
+  const std::string path = LoginsPath(persona_id);
+  const std::size_t slash = path.rfind('/');
+  if (slash != std::string::npos) {
+    g_mkdir_with_parents(path.substr(0, slash).c_str(), 0700);
+  }
+
+  // Replace any existing entry for this origin.
+  std::vector<std::string> kept;
+  std::ifstream in(path);
+  std::string line;
+  while (std::getline(in, line)) {
+    const std::size_t tab = line.find('\t');
+    if (tab != std::string::npos && line.substr(0, tab) != origin) {
+      kept.push_back(line);
+    }
+  }
+  in.close();
+
+  gchar* eo = g_uri_escape_string(origin.c_str(), nullptr, FALSE);
+  gchar* eu = g_uri_escape_string(user.c_str(), nullptr, FALSE);
+  gchar* ep = g_uri_escape_string(pass.c_str(), nullptr, FALSE);
+  std::ofstream out(path, std::ios::trunc);
+  if (out.is_open()) {
+    for (const std::string& k : kept) out << k << '\n';
+    out << (eo ? eo : "") << '\t' << (eu ? eu : "") << '\t' << (ep ? ep : "") << '\n';
+  }
+  // 0600 — only the user should read stored credentials.
+  g_chmod(path.c_str(), 0600);
+  if (eo) g_free(eo);
+  if (eu) g_free(eu);
+  if (ep) g_free(ep);
+}
+
+bool LoadLogin(const std::string& persona_id, const std::string& origin,
+               std::string* user, std::string* pass) {
+  std::ifstream in(LoginsPath(persona_id));
+  std::string line;
+  while (std::getline(in, line)) {
+    const std::size_t t1 = line.find('\t');
+    const std::size_t t2 = t1 == std::string::npos ? std::string::npos : line.find('\t', t1 + 1);
+    if (t1 == std::string::npos || t2 == std::string::npos) {
+      continue;
+    }
+    gchar* eo = g_uri_unescape_string(line.substr(0, t1).c_str(), nullptr);
+    if (eo != nullptr && origin == eo) {
+      gchar* eu = g_uri_unescape_string(line.substr(t1 + 1, t2 - t1 - 1).c_str(), nullptr);
+      gchar* ep = g_uri_unescape_string(line.substr(t2 + 1).c_str(), nullptr);
+      if (user != nullptr) *user = eu ? eu : "";
+      if (pass != nullptr) *pass = ep ? ep : "";
+      if (eu) g_free(eu);
+      if (ep) g_free(ep);
+      g_free(eo);
+      return true;
+    }
+    if (eo) g_free(eo);
+  }
+  return false;
+}
+
+// Lists all saved logins (origin + username; password never returned) for the
+// passwords manager page.
+std::vector<std::pair<std::string, std::string>> LoadAllLogins(const std::string& persona_id) {
+  std::vector<std::pair<std::string, std::string>> out;
+  std::ifstream in(LoginsPath(persona_id));
+  std::string line;
+  while (std::getline(in, line)) {
+    const std::size_t t1 = line.find('\t');
+    const std::size_t t2 = t1 == std::string::npos ? std::string::npos : line.find('\t', t1 + 1);
+    if (t1 == std::string::npos || t2 == std::string::npos) continue;
+    gchar* eo = g_uri_unescape_string(line.substr(0, t1).c_str(), nullptr);
+    gchar* eu = g_uri_unescape_string(line.substr(t1 + 1, t2 - t1 - 1).c_str(), nullptr);
+    out.emplace_back(eo ? eo : "", eu ? eu : "");
+    if (eo) g_free(eo);
+    if (eu) g_free(eu);
+  }
+  return out;
+}
+
+// Deletes one saved login by origin.
+void DeleteLogin(const std::string& persona_id, const std::string& origin) {
+  const std::string path = LoginsPath(persona_id);
+  std::ifstream in(path);
+  std::vector<std::string> kept;
+  std::string line;
+  while (std::getline(in, line)) {
+    const std::size_t t1 = line.find('\t');
+    if (t1 == std::string::npos) continue;
+    gchar* eo = g_uri_unescape_string(line.substr(0, t1).c_str(), nullptr);
+    if (eo == nullptr || origin != eo) kept.push_back(line);
+    if (eo) g_free(eo);
+  }
+  in.close();
+  std::ofstream out(path, std::ios::trunc);
+  for (const std::string& k : kept) out << k << '\n';
+}
+
+// JS escapes a value for embedding inside a double-quoted JS string literal.
+std::string JsStringEscape(const std::string& value) {
+  std::string out;
+  for (char ch : value) {
+    switch (ch) {
+      case '\\': out += "\\\\"; break;
+      case '"': out += "\\\""; break;
+      case '\n': out += "\\n"; break;
+      case '\r': out += "\\r"; break;
+      case '<': out += "\\x3c"; break;  // avoid </script> breakouts
+      default: out += ch;
+    }
+  }
+  return out;
+}
+
+// Injected into every browsing tab: posts captured login form submissions to
+// the shell over the veyraPw message handler.
+const char kPasswordCaptureScript[] =
+    "(function(){if(window.__veyraPwHooked)return;window.__veyraPwHooked=true;"
+    "document.addEventListener('submit',function(e){try{"
+    "var form=e.target;if(!form||!form.querySelector)return;"
+    "var pw=form.querySelector('input[type=password]');if(!pw||!pw.value)return;"
+    "var user='';var ins=form.querySelectorAll('input');"
+    "for(var i=0;i<ins.length;i++){var t=(ins[i].type||'').toLowerCase();"
+    "if(t==='text'||t==='email'||t==='tel'){user=ins[i].value;break;}}"
+    "if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.veyraPw)"
+    "window.webkit.messageHandlers.veyraPw.postMessage("
+    "encodeURIComponent(location.origin)+'\\t'+encodeURIComponent(user)+'\\t'+"
+    "encodeURIComponent(pw.value));}catch(err){}},true);})();";
+
+// Most-visited origins for the start page: counts visits per origin and
+// returns the top entries (origin, display title, count) by frequency.
+struct TopSite {
+  std::string url;
+  std::string title;
+  int count = 0;
+};
+
+std::vector<TopSite> TopSites(const std::string& persona_id, std::size_t max_sites) {
+  std::unordered_map<std::string, TopSite> by_origin;
+  for (const HistoryEntry& entry : LoadHistory(persona_id, 5000)) {
+    GUri* uri = g_uri_parse(entry.url.c_str(), G_URI_FLAGS_NONE, nullptr);
+    if (uri == nullptr) {
+      continue;
+    }
+    const gchar* scheme = g_uri_get_scheme(uri);
+    const gchar* host = g_uri_get_host(uri);
+    if (scheme != nullptr && host != nullptr && *host != '\0') {
+      const std::string origin = std::string(scheme) + "://" + host;
+      TopSite& site = by_origin[origin];
+      site.url = origin;
+      site.count++;
+      if (site.title.empty() && !entry.title.empty() &&
+          entry.title.rfind("http", 0) != 0) {
+        site.title = entry.title;
+      }
+    }
+    g_uri_unref(uri);
+  }
+  std::vector<TopSite> sites;
+  sites.reserve(by_origin.size());
+  for (auto& kv : by_origin) {
+    if (kv.second.title.empty()) {
+      GUri* uri = g_uri_parse(kv.second.url.c_str(), G_URI_FLAGS_NONE, nullptr);
+      const gchar* host = uri != nullptr ? g_uri_get_host(uri) : nullptr;
+      kv.second.title = host != nullptr ? host : kv.second.url;
+      if (uri != nullptr) g_uri_unref(uri);
+    }
+    sites.push_back(kv.second);
+  }
+  std::sort(sites.begin(), sites.end(),
+            [](const TopSite& a, const TopSite& b) { return a.count > b.count; });
+  if (sites.size() > max_sites) {
+    sites.resize(max_sites);
+  }
+  return sites;
+}
+
+// HTML-escapes text destined for the start page.
+std::string HtmlEscape(const std::string& value) {
+  std::string out;
+  out.reserve(value.size());
+  for (char ch : value) {
+    switch (ch) {
+      case '&': out += "&amp;"; break;
+      case '<': out += "&lt;"; break;
+      case '>': out += "&gt;"; break;
+      case '"': out += "&quot;"; break;
+      case '\'': out += "&#39;"; break;
+      default: out += ch;
+    }
+  }
+  return out;
+}
+
+// ── Veyra start page (the "new tab" page) ───────────────────────────
+// Served from the in-process veyra: scheme so it works under every persona
+// policy (file:// is blocked for browsing tabs). Chrome-like: brand, a search
+// box wired to the active engine, and most-visited tiles from this persona's
+// history. Palette tokens come from the active theme.
+std::string BuildStartPageHtml(WebKitGtkRuntimeState* state) {
+  const VeyraThemeDef* theme = LookupTheme(state->theme_id);
+  if (theme == nullptr) theme = &kVeyraThemes[0];
+  const SearchEngineDef& engine = LookupSearchEngine(state->search_engine_id);
+
+  std::string tiles;
+  for (const TopSite& site : TopSites(state->persona_id, 8)) {
+    std::string letter = "?";
+    GUri* uri = g_uri_parse(site.url.c_str(), G_URI_FLAGS_NONE, nullptr);
+    const gchar* host = uri != nullptr ? g_uri_get_host(uri) : nullptr;
+    if (host != nullptr && *host != '\0') {
+      const std::string h = host;
+      const std::size_t start = h.rfind("www.", 0) == 0 ? 4 : 0;
+      letter = std::string(1, static_cast<char>(std::toupper(
+          static_cast<unsigned char>(h[start < h.size() ? start : 0]))));
+    }
+    if (uri != nullptr) g_uri_unref(uri);
+    tiles += "<a class=\"tile\" href=\"" + HtmlEscape(site.url) + "\">"
+             "<span class=\"glyph\">" + HtmlEscape(letter) + "</span>"
+             "<span class=\"name\">" + HtmlEscape(site.title) + "</span></a>";
+  }
+  if (tiles.empty()) {
+    tiles = "<p class=\"empty\">Your most-visited sites will appear here.</p>";
+  }
+
+  std::string html =
+      "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
+      "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+      "<title>Veyra</title><style>"
+      ":root{--bg:@BG@;--bg2:@BG2@;--surf:@SURFACE@;--text:@TEXT@;--text2:@TEXT2@;"
+      "--muted:@MUTED@;--accent:@ACCENT@;--border:@BORDER@;}"
+      "*{box-sizing:border-box;margin:0;padding:0;}"
+      "html,body{height:100%;}"
+      "body{background:linear-gradient(160deg,var(--bg),var(--bg2));color:var(--text);"
+      "font-family:'Inter',system-ui,-apple-system,sans-serif;display:flex;flex-direction:column;"
+      "align-items:center;justify-content:flex-start;padding:14vh 20px 40px;gap:30px;}"
+      ".brand{display:flex;flex-direction:column;align-items:center;gap:10px;}"
+      ".logo{width:64px;height:64px;border-radius:18px;display:flex;align-items:center;"
+      "justify-content:center;font-size:30px;font-weight:800;color:var(--accent);"
+      "background:var(--surf);border:1px solid var(--border);"
+      "box-shadow:0 0 40px -8px var(--accent);}"
+      ".title{font-size:26px;font-weight:800;letter-spacing:.18em;}"
+      ".sub{color:var(--text2);font-size:13px;}"
+      "form{width:min(620px,92vw);display:flex;}"
+      "input{flex:1;background:var(--surf);border:1px solid var(--border);border-radius:26px;"
+      "padding:15px 22px;color:var(--text);font-size:16px;outline:none;transition:border-color .2s,box-shadow .2s;}"
+      "input:focus{border-color:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 18%,transparent);}"
+      "input::placeholder{color:var(--muted);}"
+      ".tiles{width:min(720px,94vw);display:grid;grid-template-columns:repeat(4,1fr);gap:16px;}"
+      "@media(max-width:560px){.tiles{grid-template-columns:repeat(2,1fr);}}"
+      ".tile{display:flex;flex-direction:column;align-items:center;gap:10px;padding:18px 10px;"
+      "border-radius:16px;text-decoration:none;color:var(--text2);background:var(--surf);"
+      "border:1px solid var(--border);transition:transform .15s,border-color .15s,color .15s;}"
+      ".tile:hover{transform:translateY(-3px);border-color:var(--accent);color:var(--text);}"
+      ".glyph{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;"
+      "justify-content:center;font-size:20px;font-weight:700;color:var(--accent);"
+      "background:color-mix(in srgb,var(--accent) 14%,transparent);}"
+      ".name{font-size:12px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"
+      ".empty{color:var(--muted);font-size:13px;grid-column:1/-1;text-align:center;padding:20px;}"
+      "</style></head><body>"
+      "<div class=\"brand\"><div class=\"logo\">V</div>"
+      "<div class=\"title\">VEYRA</div>"
+      "<div class=\"sub\">Secure browsing · @PERSONA@</div></div>"
+      "<form id=\"f\" action=\"@QUERY@\" method=\"get\">"
+      "<input id=\"q\" name=\"@QPARAM@\" autofocus autocomplete=\"off\" "
+      "placeholder=\"Search @ENGINE@ or enter address\"></form>"
+      "<div class=\"tiles\">@TILES@</div>"
+      "<script>"
+      "var f=document.getElementById('f'),q=document.getElementById('q');"
+      "f.addEventListener('submit',function(e){var v=q.value.trim();"
+      "if(v.indexOf(' ')<0 && v.indexOf('.')>0){e.preventDefault();"
+      "location.href=(v.indexOf('://')<0?'https://':'')+v;}});"
+      "</script></body></html>";
+
+  // query_url ends with the search prefix incl. "?q=" — split into action + param.
+  std::string action = engine.query_url;
+  std::string param = "q";
+  const std::size_t qpos = action.find('?');
+  if (qpos != std::string::npos) {
+    const std::string query = action.substr(qpos + 1);  // e.g. "q=" or "query="
+    const std::size_t eq = query.find('=');
+    if (eq != std::string::npos) {
+      param = query.substr(0, eq);
+    }
+    action = action.substr(0, qpos);
+  }
+
+  ReplaceAllInPlace(&html, "@BG@", theme->bg);
+  ReplaceAllInPlace(&html, "@BG2@", theme->bg2);
+  ReplaceAllInPlace(&html, "@SURFACE@", theme->surface);
+  ReplaceAllInPlace(&html, "@TEXT2@", theme->text2);
+  ReplaceAllInPlace(&html, "@TEXT@", theme->text);
+  ReplaceAllInPlace(&html, "@MUTED@", theme->muted);
+  ReplaceAllInPlace(&html, "@ACCENT@", theme->accent);
+  ReplaceAllInPlace(&html, "@BORDER@", theme->border);
+  ReplaceAllInPlace(&html, "@PERSONA@", HtmlEscape(state->persona_id));
+  ReplaceAllInPlace(&html, "@QUERY@", HtmlEscape(action));
+  ReplaceAllInPlace(&html, "@QPARAM@", HtmlEscape(param));
+  ReplaceAllInPlace(&html, "@ENGINE@", HtmlEscape(engine.label));
+  ReplaceAllInPlace(&html, "@TILES@", tiles);
+  return html;
+}
+
+// Shared <style> for the internal veyra: pages (settings, history). Tokens are
+// substituted from the active theme by FinalizeVeyraPage().
+std::string VeyraPageHead(const char* title) {
+  return std::string(
+      "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
+      "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+      "<title>") + title + "</title><style>"
+      ":root{--bg:@BG@;--bg2:@BG2@;--surf:@SURFACE@;--surfh:@SURFACE_HOVER@;--text:@TEXT@;"
+      "--text2:@TEXT2@;--muted:@MUTED@;--accent:@ACCENT@;--border:@BORDER@;}"
+      "*{box-sizing:border-box;margin:0;padding:0;}"
+      "body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;"
+      "min-height:100vh;}"
+      ".wrap{max-width:760px;margin:0 auto;padding:40px 24px 80px;}"
+      "h1{font-size:24px;font-weight:800;letter-spacing:.02em;margin-bottom:6px;}"
+      ".lead{color:var(--text2);font-size:13px;margin-bottom:28px;}"
+      ".sec{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;"
+      "color:var(--accent);margin:26px 0 10px;}"
+      ".card{background:var(--surf);border:1px solid var(--border);border-radius:14px;"
+      "overflow:hidden;}"
+      ".row{display:flex;align-items:center;justify-content:space-between;gap:16px;"
+      "padding:14px 18px;border-bottom:1px solid var(--border);}"
+      ".row:last-child{border-bottom:none;}"
+      ".row .k{font-size:14px;}"
+      ".row .d{font-size:12px;color:var(--text2);margin-top:2px;}"
+      "select,input[type=text]{background:var(--surf);color:var(--text);border:1px solid var(--border);"
+      "border-radius:9px;padding:8px 34px 8px 12px;font-size:13px;font-family:inherit;min-width:200px;"
+      "outline:none;-webkit-appearance:none;appearance:none;cursor:pointer;"
+      "background-image:url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" "
+      "width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"%23@ACCENTHEX@\" "
+      "stroke-width=\"2.5\"><path d=\"M6 9l6 6 6-6\"/></svg>');"
+      "background-repeat:no-repeat;background-position:right 10px center;}"
+      "select option{background:var(--surf);color:var(--text);}"
+      "input[type=text]{background-image:none;padding:8px 12px;cursor:text;}"
+      "select:focus,input[type=text]:focus{border-color:var(--accent);"
+      "box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent);}"
+      "a.btn,button.btn{display:inline-flex;align-items:center;gap:6px;background:var(--bg);"
+      "color:var(--text);border:1px solid var(--border);border-radius:9px;padding:8px 14px;"
+      "font-size:13px;font-family:inherit;text-decoration:none;cursor:pointer;transition:.15s;}"
+      "a.btn:hover,button.btn:hover{border-color:var(--accent);background:var(--surfh);}"
+      "a.btn.danger:hover,button.btn.danger:hover{border-color:#ff3b52;color:#ffd2d8;}"
+      "a.btn.primary{background:var(--accent);border-color:var(--accent);color:#04101c;font-weight:700;}"
+      ".hist{list-style:none;}"
+      ".hist li{display:flex;align-items:baseline;gap:14px;padding:11px 18px;"
+      "border-bottom:1px solid var(--border);}"
+      ".hist li:last-child{border-bottom:none;}"
+      ".hist .t{color:var(--text2);font-size:11px;font-variant-numeric:tabular-nums;width:120px;flex:none;}"
+      ".hist a{color:var(--text);text-decoration:none;font-size:13px;overflow:hidden;"
+      "text-overflow:ellipsis;white-space:nowrap;}"
+      ".hist a:hover{color:var(--accent);}"
+      ".hist .u{color:var(--muted);font-size:11px;margin-left:auto;overflow:hidden;"
+      "text-overflow:ellipsis;white-space:nowrap;max-width:38%;}"
+      ".bar{display:flex;gap:10px;align-items:center;margin-bottom:18px;}"
+      ".bar input{flex:1;min-width:0;}"
+      ".empty{color:var(--muted);font-size:13px;padding:30px;text-align:center;}"
+      ".note{color:var(--muted);font-size:11px;margin-top:18px;line-height:1.6;}"
+      "</style></head><body><div class=\"wrap\">";
+}
+
+void FinalizeVeyraPage(std::string* html, const VeyraThemeDef& theme) {
+  *html += "</div></body></html>";
+  // Accent as bare hex for inline SVG (the dropdown arrow). Falls back to a
+  // neutral grey when the accent isn't a #rrggbb literal.
+  std::string accent_hex = "9aa7b8";
+  if (theme.accent[0] == '#' && std::string(theme.accent).size() >= 7) {
+    accent_hex = std::string(theme.accent).substr(1, 6);
+  }
+  ReplaceAllInPlace(html, "@ACCENTHEX@", accent_hex);
+  ReplaceAllInPlace(html, "@BG@", theme.bg);
+  ReplaceAllInPlace(html, "@BG2@", theme.bg2);
+  ReplaceAllInPlace(html, "@SURFACE_HOVER@", theme.surface_hover);
+  ReplaceAllInPlace(html, "@SURFACE@", theme.surface);
+  ReplaceAllInPlace(html, "@TEXT2@", theme.text2);
+  ReplaceAllInPlace(html, "@TEXT@", theme.text);
+  ReplaceAllInPlace(html, "@MUTED@", theme.muted);
+  ReplaceAllInPlace(html, "@ACCENT@", theme.accent);
+  ReplaceAllInPlace(html, "@BORDER@", theme.border);
+}
+
+std::string OptionTags(const std::vector<std::pair<std::string, std::string>>& opts,
+                       const std::string& selected) {
+  std::string out;
+  for (const auto& opt : opts) {
+    out += "<option value=\"" + HtmlEscape(opt.first) + "\"" +
+           (opt.first == selected ? " selected" : "") + ">" + HtmlEscape(opt.second) +
+           "</option>";
+  }
+  return out;
+}
+
+std::string BuildSettingsPageHtml(WebKitGtkRuntimeState* state) {
+  const VeyraThemeDef* theme = LookupTheme(state->theme_id);
+  if (theme == nullptr) theme = &kVeyraThemes[0];
+
+  std::vector<std::pair<std::string, std::string>> themes;
+  for (const VeyraThemeDef& t : kVeyraThemes) themes.emplace_back(t.id, t.label);
+  std::vector<std::pair<std::string, std::string>> engines;
+  for (const SearchEngineDef& e : kSearchEngines) engines.emplace_back(e.id, e.label);
+  std::vector<std::pair<std::string, std::string>> routes;
+  for (const RouteChoiceDef& r : kRouteChoices) routes.emplace_back(r.id, r.label);
+
+  std::string html = VeyraPageHead("Veyra Settings");
+  html += "<h1>Settings</h1><div class=\"lead\">Browser preferences for this Veyra install.</div>";
+
+  // onchange navigates to veyra:set?key=...; the scheme handler applies it and
+  // redirects back here — no separate window, like chrome://settings.
+  html += "<div class=\"sec\">Appearance</div><div class=\"card\">"
+          "<div class=\"row\"><div><div class=\"k\">Theme</div></div>"
+          "<select onchange=\"location.href='veyra:set?theme='+this.value\">" +
+          OptionTags(themes, state->theme_id) + "</select></div>"
+          "<div class=\"row\"><div><div class=\"k\">Veyra security panel</div>"
+          "<div class=\"d\">Side panel with personas, route, guard, vault.</div></div>"
+          "<select onchange=\"location.href='veyra:set?panel='+this.value\">" +
+          OptionTags({{"on", "Shown"}, {"off", "Hidden"}},
+                     state->dashboard_visible ? "on" : "off") +
+          "</select></div></div>";
+
+  html += "<div class=\"sec\">Search</div><div class=\"card\">"
+          "<div class=\"row\"><div><div class=\"k\">Search engine</div>"
+          "<div class=\"d\">Used for address-bar searches and the start page.</div></div>"
+          "<select onchange=\"location.href='veyra:set?engine='+this.value\">" +
+          OptionTags(engines, state->search_engine_id) + "</select></div></div>";
+
+  html += "<div class=\"sec\">Startup</div><div class=\"card\">"
+          "<div class=\"row\"><div><div class=\"k\">On startup, open</div>"
+          "<div class=\"d\">veyra:start is the Veyra start page.</div></div>"
+          "<form onsubmit=\"location.href='veyra:set?startup='+encodeURIComponent(this.s.value);return false\">"
+          "<input type=\"text\" name=\"s\" value=\"" + HtmlEscape(state->startup_page) +
+          "\"></form></div></div>";
+
+  html += "<div class=\"sec\">Network</div><div class=\"card\">"
+          "<div class=\"row\"><div><div class=\"k\">Default route</div>"
+          "<div class=\"d\">Applied at launch. Tor/I2P need their local routers running.</div></div>"
+          "<select onchange=\"location.href='veyra:set?route='+this.value\">" +
+          OptionTags(routes, state->default_route_id) + "</select></div>"
+          "<div class=\"row\"><div><div class=\"k\">Proxy</div>"
+          "<div class=\"d\">Manual proxy override (Chrome/Firefox-style). Point at "
+          "your local Tor or I2P router, or any HTTP/SOCKS proxy.</div></div>"
+          "<select onchange=\"location.href='veyra:set?proxypreset='+this.value\">" +
+          OptionTags({{"", "Persona route / system"},
+                      {"socks5://127.0.0.1:9050", "Tor (SOCKS5 127.0.0.1:9050)"},
+                      {"http://127.0.0.1:4444", "I2P (HTTP 127.0.0.1:4444)"},
+                      {"__custom__", "Custom…"}},
+                     state->manual_proxy.empty() ? "" : state->manual_proxy) +
+          "</select></div>"
+          "<div class=\"row\"><div><div class=\"k\">Custom proxy URI</div>"
+          "<div class=\"d\">e.g. socks5://host:port or http://host:port. "
+          "Current: " + HtmlEscape(state->manual_proxy.empty() ? "(none)" : state->manual_proxy) +
+          "</div></div>"
+          "<form onsubmit=\"location.href='veyra:set?proxy='+encodeURIComponent(this.p.value);return false\">"
+          "<input type=\"text\" name=\"p\" value=\"" + HtmlEscape(state->manual_proxy) +
+          "\" placeholder=\"socks5://127.0.0.1:9050\"></form></div></div>";
+
+  std::vector<std::pair<std::string, std::string>> levels = {
+      {"standard", "Standard — full JavaScript"},
+      {"safer", "Safer — no WebGL / media"},
+      {"safest", "Safest — JavaScript disabled"}};
+  std::vector<std::pair<std::string, std::string>> uaModes = {
+      {"auto", "Auto (branded, blend-in when hardened)"},
+      {"branded", "Branded — show \"Veyra\""},
+      {"blendin", "Blend-in — uniform anti-fingerprint"}};
+
+  html += "<div class=\"sec\">Security &amp; Privacy</div><div class=\"card\">"
+          "<div class=\"row\"><div><div class=\"k\">Security level</div>"
+          "<div class=\"d\">JavaScript protection, like the Tor Browser slider.</div></div>"
+          "<select onchange=\"location.href='veyra:set?seclevel='+this.value\">" +
+          OptionTags(levels, state->security_level) + "</select></div>"
+          "<div class=\"row\"><div><div class=\"k\">Identify as</div>"
+          "<div class=\"d\">User-Agent. WebKit reports as Safari by default; "
+          "blend-in sends a uniform UA so you don't stand out.</div></div>"
+          "<select onchange=\"location.href='veyra:set?uamode='+this.value\">" +
+          OptionTags(uaModes, state->user_agent_mode) + "</select></div>"
+          "<div class=\"row\"><div><div class=\"k\">HTTPS-only mode</div>"
+          "<div class=\"d\">Upgrade http:// to https:// and block insecure loads.</div></div>"
+          "<select onchange=\"location.href='veyra:set?httpsonly='+this.value\">" +
+          OptionTags({{"on", "On"}, {"off", "Off"}}, state->https_only ? "on" : "off") +
+          "</select></div></div>";
+
+  html += "<div class=\"sec\">Privacy</div><div class=\"card\">"
+          "<div class=\"row\"><div><div class=\"k\">Browsing data</div>"
+          "<div class=\"d\">Cookies, cache, local storage for this session.</div></div>"
+          "<a class=\"btn danger\" href=\"veyra:set?cleardata=1\">Clear browsing data</a></div>"
+          "<div class=\"row\"><div><div class=\"k\">Autofill logins</div>"
+          "<div class=\"d\">Capture and auto-fill saved passwords.</div></div>"
+          "<select onchange=\"location.href='veyra:set?autofill='+this.value\">" +
+          OptionTags({{"on", "On"}, {"off", "Off"}}, state->autofill_enabled ? "on" : "off") +
+          "</select></div>"
+          "<div class=\"row\"><div><div class=\"k\">Saved passwords</div>"
+          "<div class=\"d\">Manage the per-persona login store.</div></div>"
+          "<a class=\"btn\" href=\"veyra:passwords\">Manage</a></div>"
+          "<div class=\"row\"><div><div class=\"k\">Downloads &amp; Extensions</div>"
+          "<div class=\"d\">Download manager and extension policy.</div></div>"
+          "<span><a class=\"btn\" href=\"veyra:downloads\">Downloads</a> "
+          "<a class=\"btn\" href=\"veyra:extensions\">Extensions</a></span></div></div>";
+
+  html += "<div class=\"sec\">System</div><div class=\"card\">"
+          "<div class=\"row\"><div><div class=\"k\">Default browser</div>"
+          "<div class=\"d\">Register Veyra as the system default for http/https links.</div></div>"
+          "<a class=\"btn primary\" href=\"veyra:set?setdefault=1\">Set as default</a></div>"
+          "<div class=\"row\"><div><div class=\"k\">Downloads</div>"
+          "<div class=\"d\">Files are scanned in BlackVault quarantine, then released to "
+          "your downloads area per the active persona's policy.</div></div></div></div>";
+
+  html += "<div class=\"note\">Security policy, routing detail and permissions are managed "
+          "per-persona in the Veyra panel — they are not browser-wide settings.</div>";
+
+  FinalizeVeyraPage(&html, *theme);
+  return html;
+}
+
+std::string BuildHistoryPageHtml(WebKitGtkRuntimeState* state) {
+  const VeyraThemeDef* theme = LookupTheme(state->theme_id);
+  if (theme == nullptr) theme = &kVeyraThemes[0];
+
+  std::string items;
+  for (const HistoryEntry& entry : LoadHistory(state->persona_id, 500)) {
+    GDateTime* when = g_date_time_new_from_unix_local(entry.epoch);
+    gchar* when_str = when != nullptr ? g_date_time_format(when, "%Y-%m-%d %H:%M") : nullptr;
+    items += "<li><span class=\"t\">" + std::string(when_str != nullptr ? when_str : "") +
+             "</span><a href=\"" + HtmlEscape(entry.url) + "\">" +
+             HtmlEscape(entry.title.empty() ? entry.url : entry.title) +
+             "</a><span class=\"u\">" + HtmlEscape(entry.url) + "</span></li>";
+    if (when_str != nullptr) g_free(when_str);
+    if (when != nullptr) g_date_time_unref(when);
+  }
+
+  std::string html = VeyraPageHead("Veyra History");
+  html += "<h1>History</h1><div class=\"lead\">Browsing history for persona · " +
+          HtmlEscape(state->persona_id) + "</div>";
+  html += "<div class=\"bar\"><input type=\"text\" id=\"q\" placeholder=\"Search history…\" "
+          "oninput=\"filter()\"><a class=\"btn danger\" href=\"veyra:history?clear=1\">Clear all</a></div>";
+  if (items.empty()) {
+    html += "<div class=\"card\"><p class=\"empty\">No history yet. "
+            "Ghost / ephemeral personas are never recorded.</p></div>";
+  } else {
+    html += "<ul class=\"hist card\" id=\"list\">" + items + "</ul>";
+  }
+  html += "<script>function filter(){var n=document.getElementById('q').value.toLowerCase();"
+          "document.querySelectorAll('#list li').forEach(function(li){"
+          "li.style.display=li.textContent.toLowerCase().indexOf(n)<0?'none':'';});}</script>";
+
+  FinalizeVeyraPage(&html, *theme);
+  return html;
+}
+
+// veyra:downloads — download manager. Lists this session's artifacts from the
+// engine's download map (BlackVault quarantine model): filename, source,
+// size, status (quarantined / released / failed) and on-disk paths.
+std::string BuildDownloadsPageHtml(WebKitGtkRuntimeState* state) {
+  const VeyraThemeDef* theme = LookupTheme(state->theme_id);
+  if (theme == nullptr) theme = &kVeyraThemes[0];
+
+  std::string rows;
+  for (const auto& kv : state->downloads) {
+    const DownloadArtifactRecord& d = kv.second;
+    std::string status, badge;
+    if (d.failed) { status = "Failed"; badge = "danger"; }
+    else if (!d.released_path.empty()) { status = "Released"; badge = "ok"; }
+    else { status = "Quarantined"; badge = "warn"; }
+    const std::string path = !d.released_path.empty() ? d.released_path : d.quarantine_path;
+    std::string size_str;
+    if (d.received_bytes >= 1024 * 1024) {
+      size_str = std::to_string(d.received_bytes / (1024 * 1024)) + " MB";
+    } else if (d.received_bytes >= 1024) {
+      size_str = std::to_string(d.received_bytes / 1024) + " KB";
+    } else {
+      size_str = std::to_string(d.received_bytes) + " B";
+    }
+    rows += "<li><div class=\"dl-main\"><span class=\"dl-name\">" +
+            HtmlEscape(d.suggested_filename.empty() ? "download" : d.suggested_filename) +
+            "</span><span class=\"dl-src\">" + HtmlEscape(d.source_url) + "</span>"
+            "<span class=\"dl-path\">" + HtmlEscape(path) + "</span></div>"
+            "<div class=\"dl-meta\"><span class=\"badge " + badge + "\">" + status + "</span>"
+            "<span class=\"dl-size\">" + size_str + "</span></div></li>";
+  }
+
+  std::string html = VeyraPageHead("Veyra Downloads");
+  html += "<style>.dl{list-style:none;}"
+          ".dl li{display:flex;justify-content:space-between;gap:14px;padding:13px 18px;"
+          "border-bottom:1px solid var(--border);align-items:center;}"
+          ".dl li:last-child{border-bottom:none;}"
+          ".dl-main{display:flex;flex-direction:column;gap:2px;min-width:0;}"
+          ".dl-name{font-size:14px;color:var(--text);}"
+          ".dl-src,.dl-path{font-size:11px;color:var(--muted);overflow:hidden;"
+          "text-overflow:ellipsis;white-space:nowrap;max-width:60vw;}"
+          ".dl-meta{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex:none;}"
+          ".dl-size{font-size:11px;color:var(--text2);}"
+          ".badge{font-size:10px;font-weight:700;padding:3px 9px;border-radius:999px;}"
+          ".badge.ok{background:rgba(0,232,123,.14);color:#00e87b;}"
+          ".badge.warn{background:rgba(255,176,32,.14);color:#ffb020;}"
+          ".badge.danger{background:rgba(255,59,82,.14);color:#ff6b7d;}</style>";
+  html += "<h1>Downloads</h1><div class=\"lead\">Files are scanned in BlackVault quarantine "
+          "before release. Persona · " + HtmlEscape(state->persona_id) + "</div>";
+  if (rows.empty()) {
+    html += "<div class=\"card\"><p class=\"empty\">No downloads this session.</p></div>";
+  } else {
+    html += "<ul class=\"dl card\">" + rows + "</ul>";
+  }
+  FinalizeVeyraPage(&html, *theme);
+  return html;
+}
+
+// veyra:passwords — saved-logins manager (per persona). Lists origin+username,
+// delete per entry or all. Passwords themselves are never rendered.
+std::string BuildPasswordsPageHtml(WebKitGtkRuntimeState* state) {
+  const VeyraThemeDef* theme = LookupTheme(state->theme_id);
+  if (theme == nullptr) theme = &kVeyraThemes[0];
+
+  std::string rows;
+  for (const auto& kv : LoadAllLogins(state->persona_id)) {
+    gchar* eo = g_uri_escape_string(kv.first.c_str(), nullptr, FALSE);
+    rows += "<li><div class=\"pw-main\"><span class=\"pw-origin\">" + HtmlEscape(kv.first) +
+            "</span><span class=\"pw-user\">" + HtmlEscape(kv.second) + "</span></div>"
+            "<a class=\"btn danger\" href=\"veyra:set?delpassword=" +
+            std::string(eo ? eo : "") + "\">Delete</a></li>";
+    if (eo) g_free(eo);
+  }
+
+  std::string html = VeyraPageHead("Veyra Passwords");
+  html += "<style>.pw{list-style:none;}.pw li{display:flex;justify-content:space-between;"
+          "align-items:center;gap:14px;padding:13px 18px;border-bottom:1px solid var(--border);}"
+          ".pw li:last-child{border-bottom:none;}.pw-main{display:flex;flex-direction:column;gap:2px;"
+          "min-width:0;}.pw-origin{font-size:14px;color:var(--text);}"
+          ".pw-user{font-size:12px;color:var(--text2);}</style>";
+  html += "<h1>Saved passwords</h1><div class=\"lead\">Per-persona login store · " +
+          HtmlEscape(state->persona_id) + ". Auto-filled on return. Ghost personas store none.</div>";
+  if (rows.empty()) {
+    html += "<div class=\"card\"><p class=\"empty\">No saved logins for this profile.</p></div>";
+  } else {
+    html += "<div class=\"bar\"><span style=\"flex:1\"></span>"
+            "<a class=\"btn danger\" href=\"veyra:set?clearpasswords=1\">Clear all</a></div>"
+            "<ul class=\"pw card\">" + rows + "</ul>";
+  }
+  FinalizeVeyraPage(&html, *theme);
+  return html;
+}
+
+// veyra:extensions — extension manager. Lists loaded content-script extensions
+// (the built-in browser-control surface) with an enable/disable toggle.
+std::string BuildExtensionsPageHtml(WebKitGtkRuntimeState* state) {
+  const VeyraThemeDef* theme = LookupTheme(state->theme_id);
+  if (theme == nullptr) theme = &kVeyraThemes[0];
+
+  std::string html = VeyraPageHead("Veyra Extensions");
+  html += "<h1>Extensions</h1><div class=\"lead\">Built-in content-script extensions. "
+          "Per-persona extension policy controls eval/frames.</div>";
+  html += "<div class=\"card\">"
+          "<div class=\"row\"><div><div class=\"k\">Veyra Browser Control</div>"
+          "<div class=\"d\">Automation / control surface (window.__VEYRA_CONTROL__), "
+          "injected at document-start on every page.</div></div>"
+          "<select onchange=\"location.href='veyra:set?ext_control='+this.value\">" +
+          OptionTags({{"on", "Enabled"}, {"off", "Disabled"}},
+                     state->extensions_enabled ? "on" : "off") +
+          "</select></div>"
+          "<div class=\"row\"><div><div class=\"k\">eval() / Function() blocker</div>"
+          "<div class=\"d\">Enforced automatically when the active persona's "
+          "extension policy forbids eval (XSS hardening).</div></div></div></div>";
+  html += "<div class=\"note\">Third-party Chrome/Firefox extensions are not supported; "
+          "Veyra ships a vetted control extension instead.</div>";
+  FinalizeVeyraPage(&html, *theme);
+  return html;
+}
+
+// Installs a Veyra .desktop entry pointing at the running binary and registers
+// it as the system default web browser (Linux/XDG). Best-effort.
+void SetAsDefaultBrowser() {
+  // Resolve the running executable so the launcher works wherever it lives.
+  char exe[4096];
+  const ssize_t n = ::readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+  std::string exe_path = n > 0 ? std::string(exe, n) : "veyra_shell";
+
+  const std::string apps_dir = std::string(g_get_user_data_dir()) + "/applications";
+  g_mkdir_with_parents(apps_dir.c_str(), 0755);
+  const std::string desktop_path = apps_dir + "/veyra.desktop";
+
+  std::string icon = "web-browser";
+  for (const char* cand : {"veyra_logo.svg", "assets/veyra_logo.svg"}) {
+    std::error_code ec;
+    if (std::filesystem::exists(cand, ec)) {
+      icon = std::filesystem::absolute(cand, ec).string();
+      break;
+    }
+  }
+
+  std::ofstream out(desktop_path, std::ios::trunc);
+  if (out.is_open()) {
+    out << "[Desktop Entry]\nType=Application\nName=Veyra\n"
+        << "GenericName=Web Browser\nComment=Security-focused browser\n"
+        << "Exec=" << exe_path << " %u\nIcon=" << icon << "\nTerminal=false\n"
+        << "Categories=Network;WebBrowser;Security;\nStartupWMClass=veyra\n"
+        << "MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;\n";
+  }
+  out.close();
+
+  // Refresh the desktop database and set the default (ignore failures).
+  std::string cmd =
+      "update-desktop-database '" + apps_dir + "' 2>/dev/null; "
+      "xdg-settings set default-web-browser veyra.desktop 2>/dev/null; "
+      "xdg-mime default veyra.desktop x-scheme-handler/http x-scheme-handler/https text/html 2>/dev/null";
+  if (std::system(cmd.c_str()) != 0) {
+    std::cerr << "[veyra] set-default-browser: xdg tools reported a non-zero status\n";
+  }
+  std::cout << "[veyra] installed launcher at " << desktop_path
+            << " and requested default-browser registration\n";
+}
+
+// Applies a veyra:set?key=value action on the UI thread, then returns a tiny
+// page that redirects back to the originating settings/history view.
+std::string ApplyVeyraAction(WebKitGtkRuntimeState* state, const std::string& query,
+                             WebKitGtkBrowserEngine* engine) {
+  std::string redirect = "veyra:settings";
+  GHashTable* params = g_uri_parse_params(query.c_str(), -1, "&", G_URI_PARAMS_NONE, nullptr);
+  if (params != nullptr) {
+    auto get = [&](const char* key) -> std::string {
+      const gchar* v = static_cast<const gchar*>(g_hash_table_lookup(params, key));
+      return v != nullptr ? std::string(v) : std::string();
+    };
+    const std::string theme = get("theme");
+    const std::string engine_id = get("engine");
+    const std::string panel = get("panel");
+    const std::string startup = get("startup");
+    const std::string route = get("route");
+    if (!theme.empty() && LookupTheme(theme) != nullptr) {
+      ApplyVeyraTheme(state, theme);
+      SaveUiPrefs(state);
+    }
+    if (!engine_id.empty()) {
+      state->search_engine_id = LookupSearchEngine(engine_id).id;
+      UpdateAddressPlaceholder(state);
+      SaveUiPrefs(state);
+    }
+    if (!panel.empty()) {
+      SetDashboardVisible(state, panel == "on");
+    }
+    if (!startup.empty()) {
+      state->startup_page = startup;
+      SaveUiPrefs(state);
+    }
+    if (g_hash_table_contains(params, "route")) {
+      state->default_route_id = (route == "none" || route == "persona") ? std::string() : route;
+      SaveUiPrefs(state);
+      if (!state->default_route_id.empty() && engine != nullptr) {
+        engine->DispatchDashboardAction(
+            "{\"action\":\"switch_route\",\"route_profile_id\":\"" + state->default_route_id + "\"}");
+      }
+    }
+    if (g_hash_table_contains(params, "cleardata") && state->website_data_manager != nullptr) {
+      webkit_website_data_manager_clear(state->website_data_manager, WEBKIT_WEBSITE_DATA_ALL,
+                                        0, nullptr, nullptr, nullptr);
+    }
+    if (g_hash_table_contains(params, "clearpasswords")) {
+      ::unlink((std::string(g_get_user_data_dir()) + "/veyra/profiles/" +
+                SanitizePathSegment(state->persona_id) + "/logins.tsv").c_str());
+    }
+    if (g_hash_table_contains(params, "setdefault")) {
+      SetAsDefaultBrowser();
+      redirect = "veyra:settings";
+    }
+    const std::string seclevel = get("seclevel");
+    if (!seclevel.empty()) {
+      state->security_level = seclevel;
+      SaveUiPrefs(state);
+      if (engine != nullptr) engine->ReapplySecurityToAllTabs();
+    }
+    const std::string uamode = get("uamode");
+    if (!uamode.empty()) {
+      state->user_agent_mode = uamode;
+      SaveUiPrefs(state);
+      if (engine != nullptr) engine->ReapplySecurityToAllTabs();
+    }
+    if (g_hash_table_contains(params, "httpsonly")) {
+      state->https_only = get("httpsonly") == "on";
+      SaveUiPrefs(state);
+    }
+    if (g_hash_table_contains(params, "proxypreset")) {
+      const std::string preset = get("proxypreset");
+      if (preset != "__custom__") {  // "" clears, a preset sets it
+        state->manual_proxy = preset;
+        SaveUiPrefs(state);
+        if (engine != nullptr) engine->SetManualProxy(preset);
+      }
+    }
+    if (g_hash_table_contains(params, "proxy")) {
+      state->manual_proxy = get("proxy");
+      SaveUiPrefs(state);
+      if (engine != nullptr) engine->SetManualProxy(state->manual_proxy);
+    }
+    const std::string delpw = get("delpassword");
+    if (!delpw.empty()) {
+      DeleteLogin(state->persona_id, delpw);
+      redirect = "veyra:passwords";
+    }
+    if (g_hash_table_contains(params, "ext_control")) {
+      state->extensions_enabled = get("ext_control") == "on";
+      SaveUiPrefs(state);
+      redirect = "veyra:extensions";
+    }
+    if (g_hash_table_contains(params, "autofill")) {
+      state->autofill_enabled = get("autofill") == "on";
+      SaveUiPrefs(state);
+    }
+    g_hash_table_unref(params);
+  }
+  return "<!DOCTYPE html><meta http-equiv=\"refresh\" content=\"0;url=" + redirect +
+         "\"><body style=\"background:#05080f\"></body>";
+}
+
+void OnStartPageScheme(WebKitURISchemeRequest* request, gpointer user_data) {
+  auto* state = static_cast<WebKitGtkRuntimeState*>(user_data);
+  const gchar* uri_c = webkit_uri_scheme_request_get_uri(request);
+  const std::string uri = uri_c != nullptr ? uri_c : "veyra:start";
+
+  // Parse "veyra:<path>?<query>" (also tolerate veyra://<path>).
+  std::string rest = uri.substr(uri.find(':') + 1);
+  while (!rest.empty() && rest.front() == '/') rest.erase(rest.begin());
+  std::string path = rest, query;
+  const std::size_t qpos = rest.find('?');
+  if (qpos != std::string::npos) {
+    path = rest.substr(0, qpos);
+    query = rest.substr(qpos + 1);
+  }
+
+  std::string html;
+  if (path == "settings") {
+    html = BuildSettingsPageHtml(state);
+  } else if (path == "history") {
+    if (query.find("clear=1") != std::string::npos) {
+      ::unlink(HistoryPath(state->persona_id).c_str());
+      html = "<!DOCTYPE html><meta http-equiv=\"refresh\" content=\"0;url=veyra:history\">"
+             "<body style=\"background:#05080f\"></body>";
+    } else {
+      html = BuildHistoryPageHtml(state);
+    }
+  } else if (path == "downloads") {
+    html = BuildDownloadsPageHtml(state);
+  } else if (path == "passwords") {
+    html = BuildPasswordsPageHtml(state);
+  } else if (path == "extensions") {
+    html = BuildExtensionsPageHtml(state);
+  } else if (path == "set") {
+    html = ApplyVeyraAction(state, query, state->owner);
+  } else {
+    html = BuildStartPageHtml(state);
+  }
+
+  GInputStream* stream =
+      g_memory_input_stream_new_from_data(g_strdup(html.c_str()), html.size(), g_free);
+  webkit_uri_scheme_request_finish(request, stream, html.size(), "text/html");
+  g_object_unref(stream);
+}
+
+// ── Dialog plumbing ──────────────────────────────────────────────────
+// Clears the owning state slot when its dialog is destroyed, so the next
+// open re-creates rather than dereferences a freed widget.
+void OnSingletonDialogDestroyed(GtkWidget* widget, gpointer user_data) {
+  auto** slot = static_cast<GtkWidget**>(user_data);
+  if (slot != nullptr && *slot == widget) {
+    *slot = nullptr;
+  }
+}
+
+// Creates a transient, non-modal Veyra dialog. When `slot` is given, the
+// dialog is tracked there as a singleton — callers raise the existing window
+// instead of spawning duplicates.
+
+GtkWidget* MakeSectionLabel(const char* text) {
+  GtkWidget* label = gtk_label_new(text);
+  AddStyleClass(label, "veyra-section");
+  gtk_label_set_xalign(GTK_LABEL(label), 0.0f);
+  return label;
+}
+
+// ── History dialog ───────────────────────────────────────────────────
+void OnSiteCookiesReady(GObject* source, GAsyncResult* result, gpointer user_data) {
+  auto* label = static_cast<GtkWidget*>(user_data);
+  GList* cookies =
+      webkit_cookie_manager_get_cookies_finish(WEBKIT_COOKIE_MANAGER(source), result, nullptr);
+  const guint count = g_list_length(cookies);
+  if (GTK_IS_LABEL(label)) {
+    const std::string text = std::to_string(count) + (count == 1 ? " cookie" : " cookies");
+    gtk_label_set_text(GTK_LABEL(label), text.c_str());
+  }
+  g_list_free_full(cookies, reinterpret_cast<GDestroyNotify>(soup_cookie_free));
+  g_object_unref(label);
+}
+
+void AddInfoRow(GtkWidget* grid, int row, const char* key, const std::string& value) {
+  GtkWidget* key_label = gtk_label_new(key);
+  AddStyleClass(key_label, "veyra-dim-label");
+  gtk_label_set_xalign(GTK_LABEL(key_label), 0.0f);
+  GtkWidget* value_label = gtk_label_new(value.c_str());
+  gtk_label_set_xalign(GTK_LABEL(value_label), 0.0f);
+  gtk_label_set_selectable(GTK_LABEL(value_label), TRUE);
+  gtk_label_set_line_wrap(GTK_LABEL(value_label), TRUE);
+  gtk_widget_set_hexpand(value_label, TRUE);
+  gtk_grid_attach(GTK_GRID(grid), key_label, 0, row, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), value_label, 1, row, 1, 1);
+}
+
+// Site information shown as a popover anchored under the address-bar padlock
+// (Chrome-like), never a separate window.
+// Per-site permission button: data holds origin + permission + allow flag.
+void OnSitePermClicked(GtkButton* button, gpointer user_data) {
+  auto* state = static_cast<WebKitGtkRuntimeState*>(user_data);
+  const char* origin = static_cast<const char*>(g_object_get_data(G_OBJECT(button), "veyra-origin"));
+  const char* perm = static_cast<const char*>(g_object_get_data(G_OBJECT(button), "veyra-perm"));
+  const bool allow = g_object_get_data(G_OBJECT(button), "veyra-allow") != nullptr;
+  if (state != nullptr && state->owner != nullptr && origin != nullptr && perm != nullptr) {
+    state->owner->SetSitePermissionDecision(origin, perm, allow);
+    // Visual feedback: highlight the chosen side.
+    GtkWidget* row = gtk_widget_get_parent(GTK_WIDGET(button));
+    if (row != nullptr) {
+      GList* kids = gtk_container_get_children(GTK_CONTAINER(row));
+      for (GList* l = kids; l != nullptr; l = l->next) {
+        gtk_widget_set_opacity(GTK_WIDGET(l->data), 1.0);
+      }
+      g_list_free(kids);
+      gtk_widget_set_opacity(GTK_WIDGET(button), 0.55);
+    }
+  }
+}
+
+// Adds an "Allow / Block" permission row to the popover grid.
+void AddPermRow(GtkWidget* grid, int row, WebKitGtkRuntimeState* state,
+                const std::string& origin, const char* label, const char* perm) {
+  GtkWidget* name = gtk_label_new(label);
+  AddStyleClass(name, "veyra-dim-label");
+  gtk_label_set_xalign(GTK_LABEL(name), 0.0f);
+  gtk_grid_attach(GTK_GRID(grid), name, 0, row, 1, 1);
+
+  GtkWidget* box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+  GtkWidget* allow = gtk_button_new_with_label("Allow");
+  GtkWidget* block = gtk_button_new_with_label("Block");
+  for (GtkWidget* b : {allow, block}) {
+    gtk_button_set_relief(GTK_BUTTON(b), GTK_RELIEF_NONE);
+    g_object_set_data_full(G_OBJECT(b), "veyra-origin", g_strdup(origin.c_str()), g_free);
+    g_object_set_data_full(G_OBJECT(b), "veyra-perm", g_strdup(perm), g_free);
+    g_signal_connect(b, "clicked", G_CALLBACK(OnSitePermClicked), state);
+  }
+  g_object_set_data(G_OBJECT(allow), "veyra-allow", GINT_TO_POINTER(1));
+  gtk_box_pack_start(GTK_BOX(box), allow, FALSE, FALSE, 0);
+  gtk_box_pack_start(GTK_BOX(box), block, FALSE, FALSE, 0);
+  gtk_grid_attach(GTK_GRID(grid), box, 1, row, 1, 1);
+}
+
+void ShowSiteInfoPopover(WebKitGtkRuntimeState* state) {
+  WebKitWebView* view = ActiveView(state);
+  if (view == nullptr || state->address_entry == nullptr) {
+    return;
+  }
+  const gchar* uri_c = webkit_web_view_get_uri(view);
+  const std::string uri = uri_c != nullptr ? uri_c : "";
+
+  // Toggle: a second click closes the open popover.
+  if (state->site_info_popover != nullptr) {
+    gtk_widget_destroy(state->site_info_popover);
+    state->site_info_popover = nullptr;
+    return;
+  }
+
+  GtkWidget* popover = gtk_popover_new(state->address_entry);
+  state->site_info_popover = popover;
+  gtk_popover_set_position(GTK_POPOVER(popover), GTK_POS_BOTTOM);
+  AddStyleClass(popover, "veyra-dialog");
+  g_signal_connect(popover, "destroy", G_CALLBACK(OnSingletonDialogDestroyed),
+                   &state->site_info_popover);
+  // Point at the padlock icon area (left edge of the entry).
+  GdkRectangle anchor = {12, 0, 1, 0};
+  GtkAllocation alloc;
+  gtk_widget_get_allocation(state->address_entry, &alloc);
+  anchor.height = alloc.height;
+  gtk_popover_set_pointing_to(GTK_POPOVER(popover), &anchor);
+
+  GtkWidget* content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+  gtk_widget_set_margin_start(content, 16);
+  gtk_widget_set_margin_end(content, 16);
+  gtk_widget_set_margin_top(content, 14);
+  gtk_widget_set_margin_bottom(content, 14);
+  gtk_container_add(GTK_CONTAINER(popover), content);
+
+  GtkWidget* grid = gtk_grid_new();
+  gtk_grid_set_row_spacing(GTK_GRID(grid), 8);
+  gtk_grid_set_column_spacing(GTK_GRID(grid), 18);
+  int row = 0;
+
+  gtk_grid_attach(GTK_GRID(grid), MakeSectionLabel("CONNECTION"), 0, row++, 2, 1);
+  AddInfoRow(grid, row++, "Origin", ExtractOriginForPrompt(uri));
+
+  GTlsCertificate* certificate = nullptr;
+  GTlsCertificateFlags tls_errors = static_cast<GTlsCertificateFlags>(0);
+  const bool has_tls = webkit_web_view_get_tls_info(view, &certificate, &tls_errors);
+
+  if (uri.rfind("https://", 0) == 0 && has_tls && certificate != nullptr) {
+    AddInfoRow(grid, row++, "Security",
+               tls_errors == 0 ? "Secure (TLS)" : "TLS errors present — connection not trusted");
+
+    gtk_grid_attach(GTK_GRID(grid), MakeSectionLabel("CERTIFICATE"), 0, row++, 2, 1);
+#if GLIB_CHECK_VERSION(2, 70, 0)
+    gchar* subject = nullptr;
+    gchar* issuer = nullptr;
+    GDateTime* not_after = nullptr;
+    g_object_get(certificate, "subject-name", &subject, "issuer-name", &issuer,
+                 "not-valid-after", &not_after, nullptr);
+    AddInfoRow(grid, row++, "Subject", subject != nullptr ? subject : "(unavailable)");
+    AddInfoRow(grid, row++, "Issuer", issuer != nullptr ? issuer : "(unavailable)");
+    if (not_after != nullptr) {
+      gchar* expiry = g_date_time_format(not_after, "%Y-%m-%d %H:%M UTC");
+      AddInfoRow(grid, row++, "Expires", expiry != nullptr ? expiry : "(unavailable)");
+      if (expiry != nullptr) g_free(expiry);
+      g_date_time_unref(not_after);
+    }
+    g_free(subject);
+    g_free(issuer);
+#else
+    AddInfoRow(grid, row++, "Details", "Certificate present (details need GLib >= 2.70)");
+#endif
+    if (tls_errors != 0) {
+      std::string problems;
+      if (tls_errors & G_TLS_CERTIFICATE_UNKNOWN_CA) problems += "unknown CA; ";
+      if (tls_errors & G_TLS_CERTIFICATE_BAD_IDENTITY) problems += "hostname mismatch; ";
+      if (tls_errors & G_TLS_CERTIFICATE_EXPIRED) problems += "expired; ";
+      if (tls_errors & G_TLS_CERTIFICATE_REVOKED) problems += "revoked; ";
+      if (tls_errors & G_TLS_CERTIFICATE_NOT_ACTIVATED) problems += "not yet valid; ";
+      if (tls_errors & G_TLS_CERTIFICATE_INSECURE) problems += "weak algorithm; ";
+      AddInfoRow(grid, row++, "Problems", problems.empty() ? "(unspecified)" : problems);
+    }
+  } else if (uri.rfind("http://", 0) == 0) {
+    AddInfoRow(grid, row++, "Security", "NOT SECURE — plain HTTP, no encryption");
+  } else {
+    AddInfoRow(grid, row++, "Security", "Local or internal page");
+  }
+
+  gtk_grid_attach(GTK_GRID(grid), MakeSectionLabel("DATA"), 0, row++, 2, 1);
+  GtkWidget* cookie_label = gtk_label_new("counting…");
+  gtk_label_set_xalign(GTK_LABEL(cookie_label), 0.0f);
+  GtkWidget* cookie_key = gtk_label_new("Cookies");
+  AddStyleClass(cookie_key, "veyra-dim-label");
+  gtk_label_set_xalign(GTK_LABEL(cookie_key), 0.0f);
+  gtk_grid_attach(GTK_GRID(grid), cookie_key, 0, row, 1, 1);
+  gtk_grid_attach(GTK_GRID(grid), cookie_label, 1, row, 1, 1);
+  row++;
+
+  if (state->web_context != nullptr && !uri.empty()) {
+    WebKitCookieManager* cookie_manager =
+        webkit_web_context_get_cookie_manager(state->web_context);
+    // The label ref is dropped by the async callback.
+    webkit_cookie_manager_get_cookies(cookie_manager, uri.c_str(), nullptr,
+                                      OnSiteCookiesReady, g_object_ref(cookie_label));
+  }
+
+  // Per-site permissions (persist to the prompt-decision store) + route info.
+  const std::string origin = ExtractOriginForPrompt(uri);
+  if (uri.rfind("http", 0) == 0) {
+    gtk_grid_attach(GTK_GRID(grid), MakeSectionLabel("SITE PERMISSIONS"), 0, row++, 2, 1);
+    AddPermRow(grid, row++, state, origin, "Camera", "camera");
+    AddPermRow(grid, row++, state, origin, "Microphone", "microphone");
+    AddPermRow(grid, row++, state, origin, "Location", "geolocation");
+    AddPermRow(grid, row++, state, origin, "Notifications", "notifications");
+  }
+  gtk_grid_attach(GTK_GRID(grid), MakeSectionLabel("ROUTE"), 0, row++, 2, 1);
+  AddInfoRow(grid, row++, "Egress",
+             state->owner != nullptr ? state->owner->ActiveRouteSummary() : "direct");
+
+  gtk_box_pack_start(GTK_BOX(content), grid, FALSE, FALSE, 0);
+  gtk_widget_show_all(content);
+  gtk_popover_popup(GTK_POPOVER(popover));
+}
+
+void OnAddressIconPress(GtkEntry* /*entry*/, GtkEntryIconPosition position,
+                        GdkEvent* /*event*/, gpointer user_data) {
+  if (position == GTK_ENTRY_ICON_PRIMARY) {
+    ShowSiteInfoPopover(static_cast<WebKitGtkRuntimeState*>(user_data));
+  }
+}
+
+// Re-applies the chrome theme attribute once the dashboard document loads
+// (the initial ApplyVeyraTheme runs before the dashboard WebView exists).
+void OnDashboardLoadChanged(WebKitWebView* view, WebKitLoadEvent load_event, gpointer user_data) {
+  auto* state = static_cast<WebKitGtkRuntimeState*>(user_data);
+  if (load_event != WEBKIT_LOAD_FINISHED || state == nullptr) {
+    return;
+  }
+  const std::string js =
+      "document.documentElement.setAttribute('data-veyra-theme','" + state->theme_id + "');";
+  webkit_web_view_evaluate_javascript(view, js.c_str(), -1, nullptr, nullptr, nullptr,
+                                      nullptr, nullptr);
+}
+
+// ── About dialog ─────────────────────────────────────────────────────
+void ShowAboutDialog(WebKitGtkRuntimeState* state) {
+  GdkPixbuf* logo = nullptr;
+  for (const char* candidate :
+       {"veyra_logo.svg", "assets/veyra_logo.svg", "../veyra_logo.svg"}) {
+    logo = gdk_pixbuf_new_from_file_at_size(candidate, 96, 96, nullptr);
+    if (logo != nullptr) break;
+  }
+  gtk_show_about_dialog(
+      state != nullptr && state->window != nullptr ? GTK_WINDOW(state->window) : nullptr,
+      "program-name", "Veyra",
+      "version", "0.11",
+      "comments", "Independent security-focused browser.\n"
+                  "Personas · Route isolation (VPN/Tor/I2P) · BlackVault quarantine",
+      "logo", logo,
+      "website", "https://github.com/natiqmammad",
+      "copyright", "ApexForge Veyra",
+      nullptr);
+  if (logo != nullptr) {
+    g_object_unref(logo);
+  }
 }
 
 std::string ExtractOriginForPrompt(const std::string& url) {
@@ -909,7 +2280,7 @@ gboolean OnAccelNewTab(GtkAccelGroup* /*group*/, GObject* /*acceleratable*/,
                        guint /*keyval*/, GdkModifierType /*modifier*/, gpointer user_data) {
   auto* state = static_cast<WebKitGtkRuntimeState*>(user_data);
   if (state != nullptr && state->owner != nullptr) {
-    state->owner->DispatchDashboardAction("{\"action\":\"open_tab\",\"url\":\"about:blank\"}");
+    state->owner->DispatchDashboardAction("{\"action\":\"open_tab\",\"url\":\"veyra:start\"}");
   }
   return TRUE;
 }
@@ -924,6 +2295,54 @@ gboolean OnAccelCloseTab(GtkAccelGroup* /*group*/, GObject* /*acceleratable*/,
 gboolean OnAccelReload(GtkAccelGroup* /*group*/, GObject* /*acceleratable*/,
                        guint /*keyval*/, GdkModifierType /*modifier*/, gpointer user_data) {
   OnNavReload(nullptr, user_data);
+  return TRUE;
+}
+
+gboolean OnAccelHistory(GtkAccelGroup* /*group*/, GObject* /*acceleratable*/,
+                        guint /*keyval*/, GdkModifierType /*modifier*/, gpointer user_data) {
+  OpenVeyraPageTab(static_cast<WebKitGtkRuntimeState*>(user_data), "veyra:history");
+  return TRUE;
+}
+
+gboolean OnAccelSettings(GtkAccelGroup* /*group*/, GObject* /*acceleratable*/,
+                         guint /*keyval*/, GdkModifierType /*modifier*/, gpointer user_data) {
+  OpenVeyraPageTab(static_cast<WebKitGtkRuntimeState*>(user_data), "veyra:settings");
+  return TRUE;
+}
+
+gboolean OnAccelHome(GtkAccelGroup* /*group*/, GObject* /*acceleratable*/,
+                     guint /*keyval*/, GdkModifierType /*modifier*/, gpointer user_data) {
+  auto* state = static_cast<WebKitGtkRuntimeState*>(user_data);
+  WebKitWebView* view = ActiveView(state);
+  if (view != nullptr) {
+    webkit_web_view_load_uri(view, "veyra:start");
+  }
+  return TRUE;
+}
+
+// Cycles the active notebook page. delta +1 = next, -1 = previous; wraps.
+void CycleTab(WebKitGtkRuntimeState* state, int delta) {
+  if (state == nullptr || state->notebook == nullptr) {
+    return;
+  }
+  const int count = gtk_notebook_get_n_pages(GTK_NOTEBOOK(state->notebook));
+  if (count <= 1) {
+    return;
+  }
+  const int current = gtk_notebook_get_current_page(GTK_NOTEBOOK(state->notebook));
+  const int next = ((current + delta) % count + count) % count;
+  gtk_notebook_set_current_page(GTK_NOTEBOOK(state->notebook), next);
+}
+
+gboolean OnAccelNextTab(GtkAccelGroup* /*group*/, GObject* /*acceleratable*/,
+                        guint /*keyval*/, GdkModifierType /*modifier*/, gpointer user_data) {
+  CycleTab(static_cast<WebKitGtkRuntimeState*>(user_data), 1);
+  return TRUE;
+}
+
+gboolean OnAccelPrevTab(GtkAccelGroup* /*group*/, GObject* /*acceleratable*/,
+                        guint /*keyval*/, GdkModifierType /*modifier*/, gpointer user_data) {
+  CycleTab(static_cast<WebKitGtkRuntimeState*>(user_data), -1);
   return TRUE;
 }
 
@@ -964,6 +2383,10 @@ void OnAddressActivate(GtkEntry* entry, gpointer user_data) {
       if (escaped != nullptr) g_free(escaped);
     }
   }
+  // HTTPS-only: upgrade a typed http:// address to https://.
+  if (state->https_only && target.rfind("http://", 0) == 0) {
+    target = "https://" + target.substr(7);
+  }
   webkit_web_view_load_uri(view, target.c_str());
 }
 
@@ -973,48 +2396,140 @@ void OnNewTabClicked(GtkButton* /*button*/, gpointer user_data) {
     // Route through the dashboard action path so main.cc creates the tab in both
     // the browser-window model and the engine, keeping them in sync.
     state->owner->DispatchDashboardAction(
-        "{\"action\":\"open_tab\",\"url\":\"about:blank\"}");
+        "{\"action\":\"open_tab\",\"url\":\"veyra:start\"}");
   }
 }
 
 // ── Hamburger menu callbacks ─────────────────────────────────────────
-void OnThemeMenuItem(GtkMenuItem* item, gpointer user_data) {
-  auto* state = static_cast<WebKitGtkRuntimeState*>(user_data);
-  if (!gtk_check_menu_item_get_active(GTK_CHECK_MENU_ITEM(item))) {
-    return;  // radio group deactivation of the previous item
-  }
-  const char* theme_id =
-      static_cast<const char*>(g_object_get_data(G_OBJECT(item), "veyra-theme-id"));
-  if (state != nullptr && theme_id != nullptr && state->theme_id != theme_id) {
-    ApplyVeyraTheme(state, theme_id);
-    SaveUiPrefs(state);
-  }
-}
-
-void OnSearchEngineMenuItem(GtkMenuItem* item, gpointer user_data) {
-  auto* state = static_cast<WebKitGtkRuntimeState*>(user_data);
-  if (!gtk_check_menu_item_get_active(GTK_CHECK_MENU_ITEM(item))) {
-    return;
-  }
-  const char* engine_id =
-      static_cast<const char*>(g_object_get_data(G_OBJECT(item), "veyra-engine-id"));
-  if (state != nullptr && engine_id != nullptr && state->search_engine_id != engine_id) {
-    state->search_engine_id = engine_id;
-    UpdateAddressPlaceholder(state);
-    SaveUiPrefs(state);
-  }
-}
-
 void OnPanelMenuToggled(GtkCheckMenuItem* item, gpointer user_data) {
   auto* state = static_cast<WebKitGtkRuntimeState*>(user_data);
   SetDashboardVisible(state, gtk_check_menu_item_get_active(item));
 }
 
-// Builds the ☰ menu: Veyra panel toggle, theme picker, search engine picker.
+void OnMenuNewTab(GtkMenuItem* /*item*/, gpointer user_data) {
+  auto* state = static_cast<WebKitGtkRuntimeState*>(user_data);
+  if (state != nullptr && state->owner != nullptr) {
+    state->owner->DispatchDashboardAction("{\"action\":\"open_tab\",\"url\":\"veyra:start\"}");
+  }
+}
+
+void OpenVeyraPageTab(WebKitGtkRuntimeState* state, const char* page) {
+  if (state == nullptr || state->owner == nullptr) {
+    return;
+  }
+  // Reuse an existing tab already on this veyra: page instead of stacking
+  // duplicates; otherwise open a new tab (Chrome-like chrome://… behavior).
+  for (const auto& kv : state->tabs) {
+    const gchar* uri = webkit_web_view_get_uri(kv.second);
+    if (uri != nullptr && std::string(uri).rfind(page, 0) == 0) {
+      std::string err;
+      state->owner->ActivateTab(kv.first, &err);
+      return;
+    }
+  }
+  state->owner->DispatchDashboardAction(
+      std::string("{\"action\":\"open_tab\",\"url\":\"") + page + "\"}");
+}
+
+void OnMenuHistory(GtkMenuItem* /*item*/, gpointer user_data) {
+  OpenVeyraPageTab(static_cast<WebKitGtkRuntimeState*>(user_data), "veyra:history");
+}
+
+void OnMenuSettings(GtkMenuItem* /*item*/, gpointer user_data) {
+  OpenVeyraPageTab(static_cast<WebKitGtkRuntimeState*>(user_data), "veyra:settings");
+}
+
+void OnMenuAbout(GtkMenuItem* /*item*/, gpointer user_data) {
+  ShowAboutDialog(static_cast<WebKitGtkRuntimeState*>(user_data));
+}
+
+GtkWidget* MakeMenuItem(const char* label, GCallback callback, gpointer user_data) {
+  GtkWidget* item = gtk_menu_item_new_with_label(label);
+  g_signal_connect(item, "activate", callback, user_data);
+  return item;
+}
+
+void OnMenuFind(GtkMenuItem*, gpointer user_data) {
+  ShowFindBar(static_cast<WebKitGtkRuntimeState*>(user_data));
+}
+void OnMenuDownloads(GtkMenuItem*, gpointer user_data) {
+  OpenVeyraPageTab(static_cast<WebKitGtkRuntimeState*>(user_data), "veyra:downloads");
+}
+void OnMenuPasswords(GtkMenuItem*, gpointer user_data) {
+  OpenVeyraPageTab(static_cast<WebKitGtkRuntimeState*>(user_data), "veyra:passwords");
+}
+void OnMenuExtensions(GtkMenuItem*, gpointer user_data) {
+  OpenVeyraPageTab(static_cast<WebKitGtkRuntimeState*>(user_data), "veyra:extensions");
+}
+gboolean OnAccelDownloads(GtkAccelGroup*, GObject*, guint, GdkModifierType, gpointer user_data) {
+  OpenVeyraPageTab(static_cast<WebKitGtkRuntimeState*>(user_data), "veyra:downloads");
+  return TRUE;
+}
+
+void OpenInspector(WebKitGtkRuntimeState* state) {
+  WebKitWebView* view = ActiveView(state);
+  if (view == nullptr) return;
+  WebKitWebInspector* inspector = webkit_web_view_get_inspector(view);
+  if (inspector != nullptr) webkit_web_inspector_show(inspector);
+}
+gboolean OnAccelInspect(GtkAccelGroup*, GObject*, guint, GdkModifierType, gpointer user_data) {
+  OpenInspector(static_cast<WebKitGtkRuntimeState*>(user_data));
+  return TRUE;
+}
+void OnMenuInspect(GtkMenuItem*, gpointer user_data) {
+  OpenInspector(static_cast<WebKitGtkRuntimeState*>(user_data));
+}
+void OnMenuPrint(GtkMenuItem*, gpointer user_data) {
+  PrintActiveView(static_cast<WebKitGtkRuntimeState*>(user_data));
+}
+void OnMenuZoomIn(GtkMenuItem*, gpointer user_data) {
+  ZoomActiveView(static_cast<WebKitGtkRuntimeState*>(user_data), 0.1, false);
+}
+void OnMenuZoomOut(GtkMenuItem*, gpointer user_data) {
+  ZoomActiveView(static_cast<WebKitGtkRuntimeState*>(user_data), -0.1, false);
+}
+void OnMenuZoomReset(GtkMenuItem*, gpointer user_data) {
+  ZoomActiveView(static_cast<WebKitGtkRuntimeState*>(user_data), 0, true);
+}
+
+// Builds the ☰ menu. Preferences live in Settings; the menu stays small.
 GtkWidget* BuildAppMenu(WebKitGtkRuntimeState* state) {
   GtkWidget* menu = gtk_menu_new();
 
-  state->panel_menu_item = gtk_check_menu_item_new_with_label("Veyra Panel");
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu),
+                        MakeMenuItem("New tab\t\tCtrl+T", G_CALLBACK(OnMenuNewTab), state));
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu),
+                        MakeMenuItem("History…\t\tCtrl+H", G_CALLBACK(OnMenuHistory), state));
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu),
+                        MakeMenuItem("Downloads…\tCtrl+J", G_CALLBACK(OnMenuDownloads), state));
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu),
+                        MakeMenuItem("Passwords…", G_CALLBACK(OnMenuPasswords), state));
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu),
+                        MakeMenuItem("Extensions…", G_CALLBACK(OnMenuExtensions), state));
+
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
+
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu),
+                        MakeMenuItem("Find in page…\tCtrl+F", G_CALLBACK(OnMenuFind), state));
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu),
+                        MakeMenuItem("Print…\t\tCtrl+P", G_CALLBACK(OnMenuPrint), state));
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu),
+                        MakeMenuItem("Inspect…\t\tF12", G_CALLBACK(OnMenuInspect), state));
+
+  GtkWidget* zoom_item = gtk_menu_item_new_with_label("Zoom");
+  GtkWidget* zoom_menu = gtk_menu_new();
+  gtk_menu_shell_append(GTK_MENU_SHELL(zoom_menu),
+                        MakeMenuItem("Zoom in\t\tCtrl++", G_CALLBACK(OnMenuZoomIn), state));
+  gtk_menu_shell_append(GTK_MENU_SHELL(zoom_menu),
+                        MakeMenuItem("Zoom out\t\tCtrl+-", G_CALLBACK(OnMenuZoomOut), state));
+  gtk_menu_shell_append(GTK_MENU_SHELL(zoom_menu),
+                        MakeMenuItem("Reset zoom\tCtrl+0", G_CALLBACK(OnMenuZoomReset), state));
+  gtk_menu_item_set_submenu(GTK_MENU_ITEM(zoom_item), zoom_menu);
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu), zoom_item);
+
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
+
+  state->panel_menu_item = gtk_check_menu_item_new_with_label("Veyra security panel");
   gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(state->panel_menu_item),
                                  state->dashboard_visible);
   g_signal_connect(state->panel_menu_item, "toggled", G_CALLBACK(OnPanelMenuToggled), state);
@@ -1022,40 +2537,10 @@ GtkWidget* BuildAppMenu(WebKitGtkRuntimeState* state) {
 
   gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
 
-  GtkWidget* theme_header = gtk_menu_item_new_with_label("Theme");
-  gtk_widget_set_sensitive(theme_header, FALSE);
-  gtk_menu_shell_append(GTK_MENU_SHELL(menu), theme_header);
-
-  GSList* theme_group = nullptr;
-  for (const VeyraThemeDef& theme : kVeyraThemes) {
-    GtkWidget* item = gtk_radio_menu_item_new_with_label(theme_group, theme.label);
-    theme_group = gtk_radio_menu_item_get_group(GTK_RADIO_MENU_ITEM(item));
-    if (state->theme_id == theme.id) {
-      gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(item), TRUE);
-    }
-    // kVeyraThemes has static storage duration, so the id pointer stays valid.
-    g_object_set_data(G_OBJECT(item), "veyra-theme-id", const_cast<char*>(theme.id));
-    g_signal_connect(item, "toggled", G_CALLBACK(OnThemeMenuItem), state);
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-  }
-
-  gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
-
-  GtkWidget* engine_header = gtk_menu_item_new_with_label("Search engine");
-  gtk_widget_set_sensitive(engine_header, FALSE);
-  gtk_menu_shell_append(GTK_MENU_SHELL(menu), engine_header);
-
-  GSList* engine_group = nullptr;
-  for (const SearchEngineDef& engine : kSearchEngines) {
-    GtkWidget* item = gtk_radio_menu_item_new_with_label(engine_group, engine.label);
-    engine_group = gtk_radio_menu_item_get_group(GTK_RADIO_MENU_ITEM(item));
-    if (state->search_engine_id == engine.id) {
-      gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(item), TRUE);
-    }
-    g_object_set_data(G_OBJECT(item), "veyra-engine-id", const_cast<char*>(engine.id));
-    g_signal_connect(item, "toggled", G_CALLBACK(OnSearchEngineMenuItem), state);
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
-  }
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu),
+                        MakeMenuItem("Settings…\t\tCtrl+,", G_CALLBACK(OnMenuSettings), state));
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu),
+                        MakeMenuItem("About Veyra", G_CALLBACK(OnMenuAbout), state));
 
   gtk_widget_show_all(menu);
   return menu;
@@ -1068,6 +2553,193 @@ GtkWidget* MakeNavButton(const char* icon_name, const char* tooltip) {
   gtk_widget_set_focus_on_click(button, FALSE);
   AddStyleClass(button, "veyra-nav-btn");
   return button;
+}
+
+// ── Zoom / print / find ──────────────────────────────────────────────
+void ZoomActiveView(WebKitGtkRuntimeState* state, double delta_or_reset, bool reset) {
+  WebKitWebView* view = ActiveView(state);
+  if (view == nullptr) {
+    return;
+  }
+  if (reset) {
+    webkit_web_view_set_zoom_level(view, 1.0);
+    return;
+  }
+  double level = webkit_web_view_get_zoom_level(view) + delta_or_reset;
+  level = level < 0.3 ? 0.3 : (level > 5.0 ? 5.0 : level);
+  webkit_web_view_set_zoom_level(view, level);
+}
+
+void PrintActiveView(WebKitGtkRuntimeState* state) {
+  WebKitWebView* view = ActiveView(state);
+  if (view == nullptr) {
+    return;
+  }
+  WebKitPrintOperation* print_op = webkit_print_operation_new(view);
+  webkit_print_operation_run_dialog(
+      print_op, state->window != nullptr ? GTK_WINDOW(state->window) : nullptr);
+  g_object_unref(print_op);
+}
+
+WebKitFindController* ActiveFindController(WebKitGtkRuntimeState* state) {
+  WebKitWebView* view = ActiveView(state);
+  return view != nullptr ? webkit_web_view_get_find_controller(view) : nullptr;
+}
+
+void RunFind(WebKitGtkRuntimeState* state, gboolean forward) {
+  WebKitFindController* finder = ActiveFindController(state);
+  if (finder == nullptr || state->find_entry == nullptr) {
+    return;
+  }
+  const gchar* text = gtk_entry_get_text(GTK_ENTRY(state->find_entry));
+  if (text == nullptr || *text == '\0') {
+    webkit_find_controller_search_finish(finder);
+    return;
+  }
+  guint32 options = WEBKIT_FIND_OPTIONS_CASE_INSENSITIVE | WEBKIT_FIND_OPTIONS_WRAP_AROUND;
+  if (!forward) {
+    options |= WEBKIT_FIND_OPTIONS_BACKWARDS;
+  }
+  webkit_find_controller_search(finder, text, options, G_MAXUINT);
+}
+
+void OnFindEntryChanged(GtkEditable* /*editable*/, gpointer user_data) {
+  RunFind(static_cast<WebKitGtkRuntimeState*>(user_data), TRUE);
+}
+
+void OnFindNext(GtkButton* /*b*/, gpointer user_data) {
+  RunFind(static_cast<WebKitGtkRuntimeState*>(user_data), TRUE);
+}
+
+void OnFindPrev(GtkButton* /*b*/, gpointer user_data) {
+  RunFind(static_cast<WebKitGtkRuntimeState*>(user_data), FALSE);
+}
+
+void CloseFindBar(WebKitGtkRuntimeState* state) {
+  if (state == nullptr) {
+    return;
+  }
+  WebKitFindController* finder = ActiveFindController(state);
+  if (finder != nullptr) {
+    webkit_find_controller_search_finish(finder);
+  }
+  if (state->find_bar != nullptr) {
+    gtk_widget_hide(state->find_bar);
+  }
+  WebKitWebView* view = ActiveView(state);
+  if (view != nullptr) {
+    gtk_widget_grab_focus(GTK_WIDGET(view));
+  }
+}
+
+void OnFindClose(GtkButton* /*b*/, gpointer user_data) {
+  CloseFindBar(static_cast<WebKitGtkRuntimeState*>(user_data));
+}
+
+gboolean OnFindKeyPress(GtkWidget* /*w*/, GdkEventKey* event, gpointer user_data) {
+  auto* state = static_cast<WebKitGtkRuntimeState*>(user_data);
+  if (event->keyval == GDK_KEY_Escape) {
+    CloseFindBar(state);
+    return TRUE;
+  }
+  if (event->keyval == GDK_KEY_Return || event->keyval == GDK_KEY_KP_Enter) {
+    RunFind(state, !(event->state & GDK_SHIFT_MASK));
+    return TRUE;
+  }
+  return FALSE;
+}
+
+void OnFindCountsChanged(WebKitFindController* finder, guint match_count, gpointer user_data) {
+  auto* state = static_cast<WebKitGtkRuntimeState*>(user_data);
+  if (state->find_label == nullptr) {
+    return;
+  }
+  const gchar* text = webkit_find_controller_get_search_text(finder);
+  if (text == nullptr || *text == '\0') {
+    gtk_label_set_text(GTK_LABEL(state->find_label), "");
+  } else {
+    const std::string msg = match_count == 0 ? std::string("No matches")
+                                             : std::to_string(match_count) + " matches";
+    gtk_label_set_text(GTK_LABEL(state->find_label), msg.c_str());
+  }
+}
+
+void ShowFindBar(WebKitGtkRuntimeState* state) {
+  if (state == nullptr || state->find_bar == nullptr) {
+    return;
+  }
+  // Connect the active view's find controller for live match counts.
+  WebKitFindController* finder = ActiveFindController(state);
+  if (finder != nullptr) {
+    g_signal_handlers_disconnect_by_func(
+        finder, reinterpret_cast<gpointer>(OnFindCountsChanged), state);
+    g_signal_connect(finder, "counted-matches", G_CALLBACK(OnFindCountsChanged), state);
+  }
+  // no_show_all (set so the window's initial show_all leaves the bar hidden)
+  // also blocks show_all here — lift it while revealing the bar.
+  gtk_widget_set_no_show_all(state->find_bar, FALSE);
+  gtk_widget_show_all(state->find_bar);
+  gtk_widget_set_no_show_all(state->find_bar, TRUE);
+  gtk_widget_grab_focus(state->find_entry);
+  gtk_editable_select_region(GTK_EDITABLE(state->find_entry), 0, -1);
+  RunFind(state, TRUE);
+}
+
+// A slim find bar (hidden until Ctrl+F): [entry | matches | prev | next | ×].
+GtkWidget* BuildFindBar(WebKitGtkRuntimeState* state) {
+  GtkWidget* bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+  AddStyleClass(bar, "veyra-toolbar");
+  gtk_widget_set_no_show_all(bar, TRUE);
+  gtk_widget_set_margin_start(bar, 8);
+  gtk_widget_set_margin_end(bar, 8);
+  gtk_widget_set_margin_top(bar, 4);
+  gtk_widget_set_margin_bottom(bar, 4);
+
+  state->find_entry = gtk_entry_new();
+  AddStyleClass(state->find_entry, "veyra-address");
+  gtk_entry_set_placeholder_text(GTK_ENTRY(state->find_entry), "Find in page");
+  gtk_widget_set_hexpand(state->find_entry, TRUE);
+  g_signal_connect(state->find_entry, "changed", G_CALLBACK(OnFindEntryChanged), state);
+  g_signal_connect(state->find_entry, "key-press-event", G_CALLBACK(OnFindKeyPress), state);
+
+  state->find_label = gtk_label_new("");
+  AddStyleClass(state->find_label, "veyra-tab-title");
+
+  GtkWidget* prev = MakeNavButton("go-up-symbolic", "Previous (Shift+Enter)");
+  g_signal_connect(prev, "clicked", G_CALLBACK(OnFindPrev), state);
+  GtkWidget* next = MakeNavButton("go-down-symbolic", "Next (Enter)");
+  g_signal_connect(next, "clicked", G_CALLBACK(OnFindNext), state);
+  GtkWidget* close = MakeNavButton("window-close-symbolic", "Close (Esc)");
+  g_signal_connect(close, "clicked", G_CALLBACK(OnFindClose), state);
+
+  gtk_box_pack_start(GTK_BOX(bar), state->find_entry, TRUE, TRUE, 0);
+  gtk_box_pack_start(GTK_BOX(bar), state->find_label, FALSE, FALSE, 4);
+  gtk_box_pack_start(GTK_BOX(bar), prev, FALSE, FALSE, 0);
+  gtk_box_pack_start(GTK_BOX(bar), next, FALSE, FALSE, 0);
+  gtk_box_pack_start(GTK_BOX(bar), close, FALSE, FALSE, 0);
+  state->find_bar = bar;
+  return bar;
+}
+
+gboolean OnAccelFind(GtkAccelGroup*, GObject*, guint, GdkModifierType, gpointer user_data) {
+  ShowFindBar(static_cast<WebKitGtkRuntimeState*>(user_data));
+  return TRUE;
+}
+gboolean OnAccelZoomIn(GtkAccelGroup*, GObject*, guint, GdkModifierType, gpointer user_data) {
+  ZoomActiveView(static_cast<WebKitGtkRuntimeState*>(user_data), 0.1, false);
+  return TRUE;
+}
+gboolean OnAccelZoomOut(GtkAccelGroup*, GObject*, guint, GdkModifierType, gpointer user_data) {
+  ZoomActiveView(static_cast<WebKitGtkRuntimeState*>(user_data), -0.1, false);
+  return TRUE;
+}
+gboolean OnAccelZoomReset(GtkAccelGroup*, GObject*, guint, GdkModifierType, gpointer user_data) {
+  ZoomActiveView(static_cast<WebKitGtkRuntimeState*>(user_data), 0, true);
+  return TRUE;
+}
+gboolean OnAccelPrint(GtkAccelGroup*, GObject*, guint, GdkModifierType, gpointer user_data) {
+  PrintActiveView(static_cast<WebKitGtkRuntimeState*>(user_data));
+  return TRUE;
 }
 
 // Builds the browser chrome: a vertical box of [navigation toolbar | notebook].
@@ -1098,6 +2770,8 @@ GtkWidget* BuildBrowserChrome(WebKitGtkRuntimeState* state) {
                                     GTK_ENTRY_ICON_PRIMARY, "system-search-symbolic");
   gtk_widget_set_hexpand(state->address_entry, TRUE);
   g_signal_connect(state->address_entry, "activate", G_CALLBACK(OnAddressActivate), state);
+  // Padlock / search icon click → site information (certificate, cookies).
+  g_signal_connect(state->address_entry, "icon-press", G_CALLBACK(OnAddressIconPress), state);
 
   GtkWidget* new_tab_button = MakeNavButton("tab-new-symbolic", "New tab (Ctrl+T)");
   g_signal_connect(new_tab_button, "clicked", G_CALLBACK(OnNewTabClicked), state);
@@ -1119,6 +2793,7 @@ GtkWidget* BuildBrowserChrome(WebKitGtkRuntimeState* state) {
   gtk_box_pack_start(GTK_BOX(toolbar), menu_button, FALSE, FALSE, 0);
 
   gtk_box_pack_start(GTK_BOX(vbox), toolbar, FALSE, FALSE, 0);
+  gtk_box_pack_start(GTK_BOX(vbox), BuildFindBar(state), FALSE, FALSE, 0);
   gtk_box_pack_start(GTK_BOX(vbox), state->notebook, TRUE, TRUE, 0);
   return vbox;
 }
@@ -1364,6 +3039,11 @@ void OnLoadChanged(WebKitWebView* view, WebKitLoadEvent load_event, gpointer use
   if (found->second == state->active_tab_id) {
     SyncToolbar(state);
   }
+
+  // Offer saved credentials once the page is fully loaded (if autofill is on).
+  if (load_event == WEBKIT_LOAD_FINISHED && state->autofill_enabled) {
+    AutofillLogin(state, view);
+  }
 }
 
 gboolean OnPermissionRequest(WebKitWebView* view,
@@ -1550,6 +3230,78 @@ void OnDashboardMessage(WebKitUserContentManager* /*manager*/,
   state->owner->DispatchDashboardAction(json);
 }
 
+// Receives "<origin>\t<user>\t<pass>" (URL-escaped) from a captured login form
+// and stores it for this persona (never for ghost/ephemeral personas).
+void OnPasswordMessage(WebKitUserContentManager* /*manager*/,
+                       WebKitJavascriptResult* js_result, gpointer user_data) {
+  auto* state = static_cast<WebKitGtkRuntimeState*>(user_data);
+  if (state == nullptr || js_result == nullptr || state->ephemeral_persona) {
+    return;
+  }
+  JSCValue* value = webkit_javascript_result_get_js_value(js_result);
+  if (value == nullptr || !jsc_value_is_string(value)) {
+    return;
+  }
+  gchar* raw = jsc_value_to_string(value);
+  if (raw == nullptr) {
+    return;
+  }
+  const std::string payload(raw);
+  g_free(raw);
+
+  const std::size_t t1 = payload.find('\t');
+  const std::size_t t2 = t1 == std::string::npos ? std::string::npos : payload.find('\t', t1 + 1);
+  if (t1 == std::string::npos || t2 == std::string::npos) {
+    return;
+  }
+  gchar* origin = g_uri_unescape_string(payload.substr(0, t1).c_str(), nullptr);
+  gchar* user = g_uri_unescape_string(payload.substr(t1 + 1, t2 - t1 - 1).c_str(), nullptr);
+  gchar* pass = g_uri_unescape_string(payload.substr(t2 + 1).c_str(), nullptr);
+  if (origin != nullptr && pass != nullptr) {
+    SaveLogin(state->persona_id, origin, user ? user : "", pass);
+  }
+  if (origin) g_free(origin);
+  if (user) g_free(user);
+  if (pass) g_free(pass);
+}
+
+// Fills the first username/password pair on a page if a credential is stored
+// for its origin. Only touches empty fields so it never clobbers user input.
+void AutofillLogin(WebKitGtkRuntimeState* state, WebKitWebView* view) {
+  if (state == nullptr || view == nullptr || state->ephemeral_persona) {
+    return;
+  }
+  const gchar* uri = webkit_web_view_get_uri(view);
+  if (uri == nullptr) {
+    return;
+  }
+  GUri* parsed = g_uri_parse(uri, G_URI_FLAGS_NONE, nullptr);
+  const gchar* scheme = parsed ? g_uri_get_scheme(parsed) : nullptr;
+  const gchar* host = parsed ? g_uri_get_host(parsed) : nullptr;
+  std::string origin;
+  if (scheme != nullptr && host != nullptr) {
+    origin = std::string(scheme) + "://" + host;
+    const int port = g_uri_get_port(parsed);
+    if (port > 0 && port != 80 && port != 443) origin += ":" + std::to_string(port);
+  }
+  if (parsed) g_uri_unref(parsed);
+
+  std::string user, pass;
+  if (origin.empty() || !LoadLogin(state->persona_id, origin, &user, &pass)) {
+    return;
+  }
+  const std::string js =
+      std::string("(function(u,p){var pw=document.querySelector('input[type=password]');"
+                  "if(!pw)return;var f=pw.form||document;var ins=f.querySelectorAll('input');"
+                  "var uf=null;for(var i=0;i<ins.length;i++){var t=(ins[i].type||'').toLowerCase();"
+                  "if(t==='text'||t==='email'||t==='tel'){uf=ins[i];break;}}"
+                  "if(uf&&!uf.value){uf.value=u;uf.dispatchEvent(new Event('input',{bubbles:true}));}"
+                  "if(!pw.value){pw.value=p;pw.dispatchEvent(new Event('input',{bubbles:true}));}"
+                  "})(\"") + JsStringEscape(user) + "\",\"" + JsStringEscape(pass) + "\");";
+  webkit_web_view_evaluate_javascript(view, js.c_str(), -1, nullptr, nullptr, nullptr,
+                                      nullptr, nullptr);
+}
+
 void OnDownloadStarted(WebKitWebContext* /*context*/, WebKitDownload* download, gpointer user_data) {
   auto* state = static_cast<WebKitGtkRuntimeState*>(user_data);
   if (state == nullptr || state->owner == nullptr || download == nullptr) {
@@ -1640,6 +3392,11 @@ WebKitGtkBrowserEngine::~WebKitGtkBrowserEngine() {
 bool WebKitGtkBrowserEngine::CreateWindow(const BrowserEngineConfig& config, std::string* error) {
   config_ = config;
 
+  // App identity: taskbar/switcher name "Veyra", Wayland app_id / X11
+  // WM_CLASS "veyra". Must run before gtk_init.
+  g_set_prgname("veyra");
+  g_set_application_name("Veyra");
+
   int argc = 0;
   char** argv = nullptr;
   if (!gtk_init_check(&argc, &argv)) {
@@ -1668,18 +3425,24 @@ bool WebKitGtkBrowserEngine::CreateWindow(const BrowserEngineConfig& config, std
   gtk_window_set_title(GTK_WINDOW(state_->window), config_.window_title.c_str());
   gtk_window_set_default_size(GTK_WINDOW(state_->window), config_.width, config_.height);
   state_->base_window_title = config_.window_title;
+  if (!config_.persona_id.empty()) {
+    state_->persona_id = config_.persona_id;
+  }
+  state_->ephemeral_persona = config_.ephemeral_persona;
 
   LoadUiPrefs(state_);
   ApplyVeyraTheme(state_, state_->theme_id);
   AddStyleClass(state_->window, "veyra-shell");
 
   // Best-effort window icon: the shell is normally launched from the repo
-  // root (scripts/native-shell.sh), where veyra_logo.svg lives.
+  // root (scripts/native-shell.sh), where veyra_logo.svg lives. The default
+  // icon also covers dialogs (settings/history/about).
   for (const char* icon_candidate :
        {"veyra_logo.svg", "assets/veyra_logo.svg", "../veyra_logo.svg"}) {
     std::error_code icon_ec;
     if (std::filesystem::exists(icon_candidate, icon_ec)) {
-      if (gtk_window_set_icon_from_file(GTK_WINDOW(state_->window), icon_candidate, nullptr)) {
+      if (gtk_window_set_default_icon_from_file(icon_candidate, nullptr)) {
+        gtk_window_set_icon_from_file(GTK_WINDOW(state_->window), icon_candidate, nullptr);
         break;
       }
     }
@@ -1747,6 +3510,8 @@ bool WebKitGtkBrowserEngine::CreateWindow(const BrowserEngineConfig& config, std
     webkit_web_view_set_settings(state_->dashboard_view, dash_settings);
     g_object_unref(dash_settings);
 
+    g_signal_connect(state_->dashboard_view, "load-changed",
+                     G_CALLBACK(OnDashboardLoadChanged), state_);
     webkit_web_view_load_uri(state_->dashboard_view, index_uri.c_str());
 
     GtkWidget* browser_box = BuildBrowserChrome(state_);
@@ -1777,6 +3542,55 @@ bool WebKitGtkBrowserEngine::CreateWindow(const BrowserEngineConfig& config, std
                           g_cclosure_new(G_CALLBACK(OnAccelReload), state_, nullptr));
   gtk_accel_group_connect(accels, GDK_KEY_F5, GdkModifierType(0), GtkAccelFlags(0),
                           g_cclosure_new(G_CALLBACK(OnAccelReload), state_, nullptr));
+  gtk_accel_group_connect(accels, GDK_KEY_h, GDK_CONTROL_MASK, GtkAccelFlags(0),
+                          g_cclosure_new(G_CALLBACK(OnAccelHistory), state_, nullptr));
+  gtk_accel_group_connect(accels, GDK_KEY_j, GDK_CONTROL_MASK, GtkAccelFlags(0),
+                          g_cclosure_new(G_CALLBACK(OnAccelDownloads), state_, nullptr));
+  gtk_accel_group_connect(accels, GDK_KEY_F12, GdkModifierType(0), GtkAccelFlags(0),
+                          g_cclosure_new(G_CALLBACK(OnAccelInspect), state_, nullptr));
+  gtk_accel_group_connect(accels, GDK_KEY_i,
+                          static_cast<GdkModifierType>(GDK_CONTROL_MASK | GDK_SHIFT_MASK),
+                          GtkAccelFlags(0),
+                          g_cclosure_new(G_CALLBACK(OnAccelInspect), state_, nullptr));
+  gtk_accel_group_connect(accels, GDK_KEY_comma, GDK_CONTROL_MASK, GtkAccelFlags(0),
+                          g_cclosure_new(G_CALLBACK(OnAccelSettings), state_, nullptr));
+  gtk_accel_group_connect(accels, GDK_KEY_Home, GDK_MOD1_MASK, GtkAccelFlags(0),
+                          g_cclosure_new(G_CALLBACK(OnAccelHome), state_, nullptr));
+  // Tab cycling: Ctrl+Tab / Ctrl+Page_Down → next, Ctrl+Shift+Tab / Ctrl+Page_Up → prev.
+  gtk_accel_group_connect(accels, GDK_KEY_Tab, GDK_CONTROL_MASK, GtkAccelFlags(0),
+                          g_cclosure_new(G_CALLBACK(OnAccelNextTab), state_, nullptr));
+  gtk_accel_group_connect(accels, GDK_KEY_Page_Down, GDK_CONTROL_MASK, GtkAccelFlags(0),
+                          g_cclosure_new(G_CALLBACK(OnAccelNextTab), state_, nullptr));
+  gtk_accel_group_connect(accels, GDK_KEY_Tab,
+                          static_cast<GdkModifierType>(GDK_CONTROL_MASK | GDK_SHIFT_MASK),
+                          GtkAccelFlags(0),
+                          g_cclosure_new(G_CALLBACK(OnAccelPrevTab), state_, nullptr));
+  gtk_accel_group_connect(accels, GDK_KEY_Page_Up, GDK_CONTROL_MASK, GtkAccelFlags(0),
+                          g_cclosure_new(G_CALLBACK(OnAccelPrevTab), state_, nullptr));
+  gtk_accel_group_connect(accels, GDK_KEY_q, GDK_CONTROL_MASK, GtkAccelFlags(0),
+                          g_cclosure_new(G_CALLBACK(+[](GtkAccelGroup*, GObject*, guint,
+                                                        GdkModifierType, gpointer) -> gboolean {
+                                           gtk_main_quit();
+                                           return TRUE;
+                                         }),
+                                         nullptr, nullptr));
+  // Find / zoom / print.
+  gtk_accel_group_connect(accels, GDK_KEY_f, GDK_CONTROL_MASK, GtkAccelFlags(0),
+                          g_cclosure_new(G_CALLBACK(OnAccelFind), state_, nullptr));
+  gtk_accel_group_connect(accels, GDK_KEY_p, GDK_CONTROL_MASK, GtkAccelFlags(0),
+                          g_cclosure_new(G_CALLBACK(OnAccelPrint), state_, nullptr));
+  gtk_accel_group_connect(accels, GDK_KEY_plus, GDK_CONTROL_MASK, GtkAccelFlags(0),
+                          g_cclosure_new(G_CALLBACK(OnAccelZoomIn), state_, nullptr));
+  gtk_accel_group_connect(accels, GDK_KEY_equal, GDK_CONTROL_MASK, GtkAccelFlags(0),
+                          g_cclosure_new(G_CALLBACK(OnAccelZoomIn), state_, nullptr));
+  gtk_accel_group_connect(accels, GDK_KEY_KP_Add, GDK_CONTROL_MASK, GtkAccelFlags(0),
+                          g_cclosure_new(G_CALLBACK(OnAccelZoomIn), state_, nullptr));
+  gtk_accel_group_connect(accels, GDK_KEY_minus, GDK_CONTROL_MASK, GtkAccelFlags(0),
+                          g_cclosure_new(G_CALLBACK(OnAccelZoomOut), state_, nullptr));
+  gtk_accel_group_connect(accels, GDK_KEY_KP_Subtract, GDK_CONTROL_MASK, GtkAccelFlags(0),
+                          g_cclosure_new(G_CALLBACK(OnAccelZoomOut), state_, nullptr));
+  gtk_accel_group_connect(accels, GDK_KEY_0, GDK_CONTROL_MASK, GtkAccelFlags(0),
+                          g_cclosure_new(G_CALLBACK(OnAccelZoomReset), state_, nullptr));
   g_object_unref(accels);
 
   UpdateAddressPlaceholder(state_);
@@ -1806,6 +3620,20 @@ bool WebKitGtkBrowserEngine::CreateWindow(const BrowserEngineConfig& config, std
     } else {
       std::cerr << "[control] failed to create FIFO: " << fifo_path << "\n";
     }
+  }
+
+  // Apply the saved default route once the main loop is running and the
+  // route service (wired through on_dashboard_action) is ready.
+  if (!state_->default_route_id.empty()) {
+    g_idle_add(
+        [](gpointer data) -> gboolean {
+          auto* self = static_cast<WebKitGtkBrowserEngine*>(data);
+          self->DispatchDashboardAction(
+              "{\"action\":\"switch_route\",\"route_profile_id\":\"" +
+              self->DefaultRouteId() + "\"}");
+          return G_SOURCE_REMOVE;
+        },
+        this);
   }
 
   return true;
@@ -1931,6 +3759,31 @@ void WebKitGtkBrowserEngine::HandleControlLine(const std::string& raw_line) {
     std::string x, y; split2(arg, &x, &y);
     call("scrollBy", std::to_string(std::atoi(x.c_str())) + "," + std::to_string(std::atoi(y.c_str())));
 
+  // ── directional scroll / swipe (default ~one viewport step) ───────
+  } else if (cmd == "scroll-down" || cmd == "scroll-up" ||
+             cmd == "scroll-left" || cmd == "scroll-right" ||
+             cmd == "scroll-top" || cmd == "scroll-bottom" ||
+             cmd == "page-down" || cmd == "page-up") {
+    const int step = arg.empty() ? 0 : std::atoi(arg.c_str());
+    std::string js;
+    if (cmd == "scroll-top") {
+      js = "window.scrollTo({top:0,left:0,behavior:'smooth'});'ok'";
+    } else if (cmd == "scroll-bottom") {
+      js = "window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'});'ok'";
+    } else {
+      // Default step: ~90% of a viewport for page-*, ~300px otherwise.
+      const char* base = (cmd == "page-down" || cmd == "page-up")
+                             ? "Math.round(innerHeight*0.9)" : "300";
+      std::string amount = step != 0 ? std::to_string(step) : base;
+      std::string dx = "0", dy = "0";
+      if (cmd == "scroll-down" || cmd == "page-down") dy = amount;
+      else if (cmd == "scroll-up" || cmd == "page-up") dy = "-(" + amount + ")";
+      else if (cmd == "scroll-right") dx = amount;
+      else if (cmd == "scroll-left") dx = "-(" + amount + ")";
+      js = "window.scrollBy({top:" + dy + ",left:" + dx + ",behavior:'smooth'});'ok'";
+    }
+    run_js(js);
+
   // ── queries / introspection ───────────────────────────────────
   } else if (cmd == "gettext" && !arg.empty()) {
     call("getText", q(arg));
@@ -2049,6 +3902,67 @@ void WebKitGtkBrowserEngine::HandleControlLine(const std::string& raw_line) {
       SaveUiPrefs(state_);
       report("{\"ok\":true,\"search_engine\":" + q(state_->search_engine_id) + "}");
     }
+  } else if (cmd == "startup-page") {
+    if (arg.empty()) {
+      report("{\"ok\":true,\"startup_page\":" + q(state_->startup_page) + "}");
+    } else {
+      state_->startup_page = arg;
+      SaveUiPrefs(state_);
+      report("{\"ok\":true,\"startup_page\":" + q(arg) + "}");
+    }
+  } else if (cmd == "default-route") {
+    if (arg.empty()) {
+      report("{\"ok\":true,\"default_route\":" + q(state_->default_route_id) + "}");
+    } else {
+      state_->default_route_id = (arg == "none" || arg == "persona") ? std::string() : arg;
+      SaveUiPrefs(state_);
+      if (!state_->default_route_id.empty()) {
+        DispatchDashboardAction("{\"action\":\"switch_route\",\"route_profile_id\":\"" +
+                                state_->default_route_id + "\"}");
+      }
+      report("{\"ok\":true,\"default_route\":" + q(state_->default_route_id) + "}");
+    }
+  } else if (cmd == "history") {
+    std::string json = "{\"ok\":true,\"value\":[";
+    bool first = true;
+    for (const HistoryEntry& entry : LoadHistory(state_->persona_id, 200)) {
+      if (!first) json += ",";
+      json += "{\"url\":" + q(entry.url) + ",\"title\":" + q(entry.title) +
+              ",\"epoch\":" + std::to_string(entry.epoch) + "}";
+      first = false;
+    }
+    report(json + "]}");
+  } else if (cmd == "history-clear") {
+    ::unlink(HistoryPath(state_->persona_id).c_str());
+    report("{\"ok\":true}");
+  } else if (cmd == "clear-data") {
+    if (state_->website_data_manager != nullptr) {
+      webkit_website_data_manager_clear(state_->website_data_manager, WEBKIT_WEBSITE_DATA_ALL,
+                                        0, nullptr, nullptr, nullptr);
+    }
+    report("{\"ok\":true}");
+  } else if (cmd == "settings") {
+    OpenVeyraPageTab(state_, "veyra:settings");
+    report("{\"ok\":true}");
+  } else if (cmd == "site-info") {
+    ShowSiteInfoPopover(state_);
+    report("{\"ok\":true}");
+  } else if (cmd == "find") {
+    if (state_->find_entry != nullptr) {
+      gtk_entry_set_text(GTK_ENTRY(state_->find_entry), arg.c_str());
+    }
+    ShowFindBar(state_);
+    report("{\"ok\":true,\"find\":" + q(arg) + "}");
+  } else if (cmd == "zoom") {
+    if (arg == "in") ZoomActiveView(state_, 0.1, false);
+    else if (arg == "out") ZoomActiveView(state_, -0.1, false);
+    else ZoomActiveView(state_, 0, true);
+    WebKitWebView* v = ActiveView(state_);
+    report(std::string("{\"ok\":true,\"zoom\":") +
+           (v != nullptr ? std::to_string(webkit_web_view_get_zoom_level(v)) : "1") + "}");
+  } else if (cmd == "print") {
+    PrintActiveView(state_);
+    report("{\"ok\":true}");
   } else if (cmd == "route" && !arg.empty()) {
     DispatchDashboardAction("{\"action\":\"switch_route\",\"route_profile_id\":\"" + arg + "\"}");
     report("{\"ok\":true,\"route\":" + q(arg) + "}");
@@ -2102,9 +4016,11 @@ void WebKitGtkBrowserEngine::HandleControlLine(const std::string& raw_line) {
     report("{\"ok\":true,\"commands\":["
            "\"navigate back forward reload url title quit\","
            "\"tab-new tab-close tabs tab route action\","
-           "\"panel theme search-engine\","
+           "\"panel theme search-engine startup-page default-route\","
+           "\"history history-clear clear-data settings site-info\","
            "\"wait-load wait-for wait-text\","
            "\"click dblclick rightclick hover focus blur fill type clear keypress check select submit scroll scroll-by\","
+           "\"scroll-up scroll-down scroll-left scroll-right scroll-top scroll-bottom page-up page-down\","
            "\"gettext getvalue exists visible count attrs html bounds query pageinfo links\","
            "\"clickable textdump annotate annotate-clear click-index\","
            "\"console errors clear-logs cookies storage-get storage-set storage-clear\","
@@ -2175,11 +4091,19 @@ void WebKitGtkBrowserEngine::RunControlScript(const std::string& path) {
 }
 
 bool WebKitGtkBrowserEngine::CreateTab(const std::string& tab_id,
-                                       const std::string& initial_url,
+                                       const std::string& initial_url_in,
                                        std::string* error) {
   if (state_->notebook == nullptr) {
     SetError(error, "CreateWindow must be called before CreateTab.");
     return false;
+  }
+
+  // The first tab honors the configured startup page; later "veyra:start"
+  // requests (new-tab button) always show the start page itself.
+  std::string initial_url = initial_url_in;
+  if (initial_url == "veyra:start" && state_->tabs.empty() &&
+      !state_->startup_page.empty()) {
+    initial_url = state_->startup_page;
   }
 
   if (state_->tabs.find(tab_id) != state_->tabs.end()) {
@@ -2210,7 +4134,27 @@ bool WebKitGtkBrowserEngine::CreateTab(const std::string& tab_id,
   ApplyViewSecurityPolicy(view);
   InjectFingerprintScript(view);
   InjectExtensionPolicyScript(view);
-  InjectExtensionContentScripts(view);
+  // The browser-control extension can be disabled from veyra:extensions.
+  if (state_->extensions_enabled) {
+    InjectExtensionContentScripts(view);
+  }
+
+  // Password capture: register the veyraPw handler and inject the form-submit
+  // listener on this view's own UCM (persistent personas only, autofill on).
+  if (!state_->ephemeral_persona && state_->autofill_enabled) {
+    WebKitUserContentManager* ucm = webkit_web_view_get_user_content_manager(view);
+    if (ucm != nullptr) {
+      webkit_user_content_manager_register_script_message_handler(ucm, "veyraPw");
+      g_signal_connect(ucm, "script-message-received::veyraPw",
+                       G_CALLBACK(OnPasswordMessage), state_);
+      WebKitUserScript* script = webkit_user_script_new(
+          kPasswordCaptureScript, WEBKIT_USER_CONTENT_INJECT_ALL_FRAMES,
+          WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_END, nullptr, nullptr);
+      webkit_user_content_manager_add_script(ucm, script);
+      webkit_user_script_unref(script);
+    }
+  }
+
   g_signal_connect(view, "load-changed", G_CALLBACK(OnLoadChanged), state_);
   g_signal_connect(view, "notify::title", G_CALLBACK(OnTitleChanged), state_);
   g_signal_connect(view, "notify::estimated-load-progress",
@@ -2241,8 +4185,11 @@ bool WebKitGtkBrowserEngine::CreateTab(const std::string& tab_id,
   }
 
   gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(state_->notebook), scroller, TRUE);
-  gtk_notebook_set_current_page(GTK_NOTEBOOK(state_->notebook), page_index);
+  // Show the page BEFORE switching to it: GtkNotebook silently refuses to make
+  // a not-yet-visible page current, which would leave the visible page and the
+  // active-tab state out of sync (new tab "active" but old page still shown).
   gtk_widget_show_all(scroller);
+  gtk_notebook_set_current_page(GTK_NOTEBOOK(state_->notebook), page_index);
 
   state_->tabs.emplace(tab_id, view);
   state_->tab_ids.emplace(view, tab_id);
@@ -2475,7 +4422,19 @@ void WebKitGtkBrowserEngine::RecordNavigation(const std::string& tab_id,
     return;
   }
 
+  // Skip duplicate notifications (committed + finished fire for one load) so
+  // history doesn't double-record.
+  const bool is_new_url = current_urls_[tab_id] != resolved_url;
   current_urls_[tab_id] = resolved_url;
+
+  // Ghost/ephemeral personas leave no trace; persistent ones get history.
+  if (is_new_url && !config_.security_policy.use_ephemeral_context) {
+    // Placeholder titles (tab id seed from CreateTab, "Untitled" before the
+    // page reports one) read poorly in the history viewer — use the origin.
+    const bool placeholder_title = title.empty() || title == tab_id || title == "Untitled";
+    AppendHistoryEntry(state_->persona_id, resolved_url,
+                       placeholder_title ? ExtractOriginForPrompt(resolved_url) : title);
+  }
 
   if (config_.on_navigation_committed) {
     config_.on_navigation_committed(tab_id, resolved_url, title);
@@ -2534,6 +4493,10 @@ bool WebKitGtkBrowserEngine::ApplyContextSecurityPolicy(std::string* error) {
 
   webkit_web_context_set_cache_model(state_->web_context, cache_model);
   webkit_web_context_set_sandbox_enabled(state_->web_context, policy.enable_sandbox);
+
+  // Internal start page ("new tab") served from memory under the veyra: scheme.
+  webkit_web_context_register_uri_scheme(state_->web_context, "veyra",
+                                         OnStartPageScheme, state_, nullptr);
   return true;
 }
 
@@ -2544,22 +4507,24 @@ bool WebKitGtkBrowserEngine::ApplyNetworkProxySettings(const EngineSecurityPolic
     return false;
   }
 
+  // A manual proxy set in Settings → Network overrides the persona route
+  // (lets the user point straight at Tor 9050 / I2P 4444 / any proxy).
+  const std::string manual = state_ != nullptr ? state_->manual_proxy : std::string();
+  const std::string effective_proxy = !manual.empty() ? manual : policy.route_proxy_uri;
+  const bool want_custom = !manual.empty() || policy.proxy_mode == "custom-proxy";
+
   WebKitNetworkProxyMode proxy_mode = WEBKIT_NETWORK_PROXY_MODE_NO_PROXY;
   WebKitNetworkProxySettings* proxy_settings = nullptr;
-  if (policy.proxy_mode == "system-default") {
+  if (manual.empty() && policy.proxy_mode == "system-default") {
     proxy_mode = WEBKIT_NETWORK_PROXY_MODE_DEFAULT;
-  } else if (policy.proxy_mode == "custom-proxy" && !policy.route_proxy_uri.empty()) {
+  } else if (want_custom && !effective_proxy.empty()) {
     proxy_mode = WEBKIT_NETWORK_PROXY_MODE_CUSTOM;
-    proxy_settings = webkit_network_proxy_settings_new(policy.route_proxy_uri.c_str(), nullptr);
+    proxy_settings = webkit_network_proxy_settings_new(effective_proxy.c_str(), nullptr);
     if (proxy_settings != nullptr) {
-      webkit_network_proxy_settings_add_proxy_for_scheme(
-          proxy_settings, "http", policy.route_proxy_uri.c_str());
-      webkit_network_proxy_settings_add_proxy_for_scheme(
-          proxy_settings, "https", policy.route_proxy_uri.c_str());
-      webkit_network_proxy_settings_add_proxy_for_scheme(
-          proxy_settings, "ws", policy.route_proxy_uri.c_str());
-      webkit_network_proxy_settings_add_proxy_for_scheme(
-          proxy_settings, "wss", policy.route_proxy_uri.c_str());
+      for (const char* sch : {"http", "https", "ws", "wss"}) {
+        webkit_network_proxy_settings_add_proxy_for_scheme(
+            proxy_settings, sch, effective_proxy.c_str());
+      }
     }
   }
 
@@ -2926,7 +4891,14 @@ void WebKitGtkBrowserEngine::ApplyViewSecurityPolicy(void* web_view_ptr) {
 
   const EngineSecurityPolicy& policy = config_.security_policy;
   WebKitSettings* settings = webkit_settings_new();
-  webkit_settings_set_enable_javascript(settings, policy.enable_javascript);
+  // JS protection / security level (Tor-style): "safest" disables JS entirely,
+  // "safer" keeps JS but drops risky surfaces, "standard" follows the persona.
+  const std::string level = state_ != nullptr ? state_->security_level : std::string("standard");
+  bool js_enabled = policy.enable_javascript;
+  if (level == "safest") {
+    js_enabled = false;
+  }
+  webkit_settings_set_enable_javascript(settings, js_enabled);
   webkit_settings_set_enable_javascript_markup(settings, policy.enable_javascript_markup);
   webkit_settings_set_enable_html5_local_storage(settings, policy.enable_html5_local_storage);
   webkit_settings_set_enable_html5_database(settings, policy.enable_html5_database);
@@ -2940,7 +4912,40 @@ void WebKitGtkBrowserEngine::ApplyViewSecurityPolicy(void* web_view_ptr) {
       settings, policy.allow_file_access_from_file_urls);
   webkit_settings_set_allow_universal_access_from_file_urls(
       settings, policy.allow_universal_access_from_file_urls);
-  webkit_settings_set_user_agent_with_application_details(settings, "ApexForgeVeyra", "0.7");
+  // User-Agent strategy (answers "why does WhatsApp show Safari?"): WebKitGTK's
+  // default UA reports as Safari because it IS WebKit. We override it:
+  //  • Hardened/ghost/red-team personas get a UNIFORM "blend-in" UA — the most
+  //    common desktop Chrome/Windows string, identical for every Veyra user, so
+  //    no one stands out (Mullvad/Tor anti-fingerprint approach).
+  //  • Casual personas get a compatible Chrome UA branded with "Veyra/1.0" so
+  //    sites identify Veyra without breaking (Chrome token kept for compat).
+  // A persisted ua_mode pref (auto/branded/blendin) can force either.
+  const std::string ua_mode =
+      (state_ != nullptr && !state_->user_agent_mode.empty()) ? state_->user_agent_mode
+      : (config_.user_agent_mode.empty() ? std::string("auto") : config_.user_agent_mode);
+  static const char kBlendInUA[] =
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+  static const char kBrandedUA[] =
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Veyra/1.0";
+  const bool hardened = policy.use_ephemeral_context ||
+                        policy.mode_id == "ghost" || policy.mode_id == "redteam" ||
+                        policy.mode_id == "hardened";
+  const char* ua = kBrandedUA;
+  if (ua_mode == "blendin" || (ua_mode == "auto" && hardened)) {
+    ua = kBlendInUA;
+  } else if (ua_mode == "branded") {
+    ua = kBrandedUA;
+  }
+  webkit_settings_set_user_agent(settings, ua);
+
+  // "safer"/"safest" also drop high-fingerprint / high-risk surfaces (WebGL),
+  // mirroring the Tor Browser security slider.
+  if (level == "safer" || level == "safest") {
+    webkit_settings_set_enable_webgl(settings, FALSE);
+    webkit_settings_set_enable_media_stream(settings, FALSE);
+  }
 
   // Extension policy: mixed-content control.
   // The allow_running/displaying_insecure_content toggles were deprecated in
@@ -2959,6 +4964,10 @@ void WebKitGtkBrowserEngine::ApplyViewSecurityPolicy(void* web_view_ptr) {
   (void)policy.block_mixed_content;  // Enforced by WebKit's secure defaults.
 #endif
 
+  // Developer tools / Inspect element (right-click → Inspect, or F12). Off in
+  // "safest" where scripting is disabled anyway.
+  webkit_settings_set_enable_developer_extras(settings, level != "safest" ? TRUE : FALSE);
+
   webkit_web_view_set_settings(web_view, settings);
   g_object_unref(settings);
 }
@@ -2966,6 +4975,66 @@ void WebKitGtkBrowserEngine::ApplyViewSecurityPolicy(void* web_view_ptr) {
 void WebKitGtkBrowserEngine::DispatchDashboardAction(const std::string& action_json) const {
   if (config_.on_dashboard_action) {
     config_.on_dashboard_action(action_json);
+  }
+}
+
+std::string WebKitGtkBrowserEngine::DefaultRouteId() const {
+  return state_ != nullptr ? state_->default_route_id : std::string();
+}
+
+void WebKitGtkBrowserEngine::SetSitePermissionDecision(const std::string& origin,
+                                                       const std::string& permission, bool allow) {
+  PermissionKind kind;
+  if (permission == "camera") kind = PermissionKind::kCamera;
+  else if (permission == "microphone") kind = PermissionKind::kMicrophone;
+  else if (permission == "geolocation") kind = PermissionKind::kGeolocation;
+  else if (permission == "notifications") kind = PermissionKind::kNotifications;
+  else if (permission == "clipboard") kind = PermissionKind::kClipboard;
+  else return;
+  CachePromptDecision(origin, kind, allow);
+  std::string err;
+  FlushPromptDecisionStore(&err);
+}
+
+void WebKitGtkBrowserEngine::SetActivePersona(const std::string& persona_id, bool ephemeral) {
+  if (state_ == nullptr) {
+    return;
+  }
+  state_->persona_id = persona_id.empty() ? state_->persona_id : persona_id;
+  state_->ephemeral_persona = ephemeral;
+  config_.persona_id = state_->persona_id;
+  config_.ephemeral_persona = ephemeral;
+  // Re-apply per-view security so the new persona's fingerprint/UA/JS policy
+  // takes effect, and reload so pages pick up the switched profile + route.
+  ReapplySecurityToAllTabs();
+}
+
+void WebKitGtkBrowserEngine::SetManualProxy(const std::string& proxy_uri) {
+  if (state_ == nullptr) return;
+  state_->manual_proxy = proxy_uri;
+  std::string err;
+  ApplyNetworkProxySettings(config_.security_policy, &err);
+  ReapplySecurityToAllTabs();
+}
+
+std::string WebKitGtkBrowserEngine::ActiveRouteSummary() const {
+  const EngineSecurityPolicy& p = config_.security_policy;
+  std::string s = p.route_type.empty() ? "direct" : p.route_type;
+  if (!p.route_proxy_uri.empty()) s += " · " + p.route_proxy_uri;
+  return s;
+}
+
+void WebKitGtkBrowserEngine::ReapplySecurityToAllTabs() {
+  if (state_ == nullptr) {
+    return;
+  }
+  for (const auto& kv : state_->tabs) {
+    ApplyViewSecurityPolicy(kv.second);
+    const gchar* uri = webkit_web_view_get_uri(kv.second);
+    // Don't reload internal pages (settings/start) — just web content.
+    if (uri != nullptr && std::string(uri).rfind("veyra:", 0) != 0) {
+      webkit_web_view_reload(kv.second);
+    }
   }
 }
 
@@ -3623,6 +5692,22 @@ bool WebKitGtkBrowserEngine::ShouldAllowNavigation(const std::string& tab_id,
       parsed_uri = nullptr;
     }
   };
+
+  // veyra: is the trusted internal start page — always navigable.
+  if (scheme == "veyra") {
+    cleanup_uri();
+    return true;
+  }
+
+  // HTTPS-only mode: refuse plain-http loads to public hosts (localhost and
+  // private ranges stay reachable for dev). The address bar upgrades typed
+  // http→https; this blocks anything that slips through insecurely.
+  if (state_ != nullptr && state_->https_only && scheme == "http" &&
+      !is_localhost && !is_private_network && !is_ip_literal) {
+    *message = "HTTPS-only mode blocked an insecure load: " + uri;
+    cleanup_uri();
+    return false;
+  }
 
   if (!policy.allow_non_web_schemes && !is_web_scheme) {
     *message = "Blocked non-web scheme navigation for " + tab_id + ": " + uri;

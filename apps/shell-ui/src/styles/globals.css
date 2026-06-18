@@ -53,6 +53,113 @@
   --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-smooth: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-spring: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Chrome-level surfaces (sidebar rail, topbar) — themable */
+  --rail-bg: rgba(6, 12, 24, 0.85);
+  --topbar-bg: rgba(6, 12, 24, 0.6);
+  /* Sunken inset (input wells, footers) — darker on dark, faint on light */
+  --sunken: rgba(0, 0, 0, 0.25);
+  --overlay-bg: rgba(8, 16, 30, 0.95);
+}
+
+/* ── Chrome theme sync ────────────────────────────────────
+   The native shell sets data-veyra-theme on <html> (ApplyVeyraTheme) so the
+   panel palette follows the browser chrome. Default (no attribute) = dark. */
+
+[data-veyra-theme="veyra-light"] {
+  --bg-primary:    #f2f5fa;
+  --bg-secondary:  #e7edf6;
+  --bg-card:       rgba(255, 255, 255, 0.75);
+  --bg-card-solid: #ffffff;
+  --bg-hover:      rgba(31, 122, 224, 0.07);
+  --border:        rgba(31, 122, 224, 0.18);
+  --border-strong: rgba(31, 122, 224, 0.40);
+  --border-glow:   rgba(31, 122, 224, 0.45);
+  --accent:        #1f7ae0;
+  --accent-bright: #1565c0;
+  --accent-dim:    rgba(31, 122, 224, 0.10);
+  --accent-glow:   rgba(31, 122, 224, 0.22);
+  --cyan:          #0e7d8a;
+  --cyan-dim:      rgba(14, 125, 138, 0.10);
+  --purple:        #7b3ff2;
+  --purple-bright: #6b2fd6;
+  --purple-dim:    rgba(123, 63, 242, 0.10);
+  --magenta:       #d6336c;
+  --magenta-dim:   rgba(214, 51, 108, 0.08);
+  --text-primary:  #1c2733;
+  --text-secondary:#51647a;
+  --text-muted:    #8295ab;
+  --success:       #0c8f54;
+  --success-dim:   rgba(12, 143, 84, 0.10);
+  --warning:       #b97509;
+  --warning-dim:   rgba(185, 117, 9, 0.10);
+  --danger:        #d3263f;
+  --danger-dim:    rgba(211, 38, 63, 0.08);
+  --glass-bg: rgba(255, 255, 255, 0.65);
+  --glass-border: rgba(31, 122, 224, 0.20);
+  --rail-bg: rgba(231, 237, 246, 0.92);
+  --topbar-bg: rgba(231, 237, 246, 0.75);
+  --sunken: rgba(31, 122, 224, 0.06);
+  --overlay-bg: rgba(255, 255, 255, 0.97);
+  --shadow-glow: 0 0 30px rgba(31, 122, 224, 0.05);
+  --shadow-card: 0 4px 24px rgba(28, 39, 51, 0.08), 0 0 1px rgba(31, 122, 224, 0.25);
+  --shadow-elevated: 0 8px 40px rgba(28, 39, 51, 0.14), 0 0 80px rgba(31, 122, 224, 0.04);
+}
+
+/* Light theme: kill the dark mesh/scanline overlays */
+[data-veyra-theme="veyra-light"] #root::before,
+[data-veyra-theme="veyra-light"] #root::after { display: none; }
+
+[data-veyra-theme="midnight-purple"] {
+  --bg-primary:    #0a0614;
+  --bg-secondary:  #130b22;
+  --bg-card:       rgba(26, 15, 48, 0.65);
+  --bg-card-solid: #1a0f30;
+  --bg-hover:      rgba(165, 92, 255, 0.10);
+  --border:        rgba(165, 92, 255, 0.14);
+  --border-strong: rgba(165, 92, 255, 0.36);
+  --border-glow:   rgba(165, 92, 255, 0.50);
+  --accent:        #a55cff;
+  --accent-bright: #c08aff;
+  --accent-dim:    rgba(165, 92, 255, 0.12);
+  --accent-glow:   rgba(165, 92, 255, 0.30);
+  --text-primary:  #eadffc;
+  --text-secondary:#a08fc8;
+  --text-muted:    #5d4b85;
+  --glass-bg: rgba(16, 8, 30, 0.55);
+  --glass-border: rgba(165, 92, 255, 0.16);
+  --rail-bg: rgba(14, 7, 26, 0.88);
+  --topbar-bg: rgba(14, 7, 26, 0.65);
+  --sunken: rgba(0, 0, 0, 0.28);
+  --overlay-bg: rgba(18, 10, 32, 0.96);
+}
+
+[data-veyra-theme="ghost-green"] {
+  --bg-primary:    #04100a;
+  --bg-secondary:  #071a10;
+  --bg-card:       rgba(10, 36, 23, 0.65);
+  --bg-card-solid: #0a2417;
+  --bg-hover:      rgba(0, 232, 123, 0.08);
+  --border:        rgba(0, 232, 123, 0.13);
+  --border-strong: rgba(0, 232, 123, 0.32);
+  --border-glow:   rgba(0, 232, 123, 0.45);
+  --accent:        #00e87b;
+  --accent-bright: #4dffa6;
+  --accent-dim:    rgba(0, 232, 123, 0.10);
+  --accent-glow:   rgba(0, 232, 123, 0.26);
+  --cyan:          #00e8c4;
+  --purple:        #38b26d;
+  --purple-bright: #5ed492;
+  --purple-dim:    rgba(56, 178, 109, 0.12);
+  --text-primary:  #d6f5e4;
+  --text-secondary:#74ad90;
+  --text-muted:    #3c6650;
+  --glass-bg: rgba(4, 18, 11, 0.55);
+  --glass-border: rgba(0, 232, 123, 0.15);
+  --rail-bg: rgba(5, 22, 14, 0.88);
+  --topbar-bg: rgba(5, 22, 14, 0.65);
+  --sunken: rgba(0, 0, 0, 0.28);
+  --overlay-bg: rgba(5, 22, 14, 0.96);
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -72,6 +179,17 @@ body {
   -moz-osx-font-smoothing: grayscale;
   user-select: none;
   letter-spacing: 0.01em;
+}
+
+/* Smooth cross-fade of colors when the chrome theme switches. Excludes
+   transform/opacity-driven animations so spinners/pulses stay snappy. */
+.app, .app-sidebar, .app-main, .app-main__topbar, .app-panel,
+.card, .persona-row, .badge, .btn, .route-select, .tool-row,
+.permission-row, .vault-event, .osint-entity, input, textarea, select {
+  transition: background-color var(--transition-smooth),
+              border-color var(--transition-smooth),
+              color var(--transition-smooth),
+              box-shadow var(--transition-smooth);
 }
 
 /* ── Animated gradient background mesh ───────────────── */

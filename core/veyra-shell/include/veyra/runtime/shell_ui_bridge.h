@@ -15,6 +15,7 @@ namespace veyra {
 
 struct DashboardAction {
   std::string action;
+  std::string persona_id;
   std::string route_profile_id;
   std::string tool_id;
   std::vector<std::string> tool_args;

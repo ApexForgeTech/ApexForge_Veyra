@@ -56,6 +56,20 @@ class WebKitGtkBrowserEngine : public BrowserEngine {
                        const std::string& category,
                        const std::string& message) const;
   void DispatchDashboardAction(const std::string& action_json) const;
+  std::string DefaultRouteId() const;
+  // Per-site permission override (camera/microphone/geolocation/notifications/
+  // clipboard) set from the site-info popover; persists to the decision store.
+  void SetSitePermissionDecision(const std::string& origin,
+                                 const std::string& permission, bool allow);
+  std::string ActiveRouteSummary() const;
+  // Manual network proxy from Settings → Network; applies immediately + reloads.
+  void SetManualProxy(const std::string& proxy_uri);
+  // Switches the active persona at runtime: updates per-profile state (history
+  // path, ephemeral, fingerprint/UA via security level) and re-applies to tabs.
+  void SetActivePersona(const std::string& persona_id, bool ephemeral) override;
+  // Re-applies the security/UA/JS settings to every open tab and reloads them
+  // (used when the security level / UA mode changes from Settings).
+  void ReapplySecurityToAllTabs();
   bool IsThirdPartyFrameBlocked(const std::string& tab_id,
                                 const std::string& dest_uri,
                                 std::string* message) const;

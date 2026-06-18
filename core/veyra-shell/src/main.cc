@@ -4,6 +4,7 @@
 #include "veyra/runtime/permission_broker.h"
 #include "veyra/runtime/profile_manager.h"
 #include "veyra/runtime/route_service.h"
+#include "veyra/runtime/router_supervisor.h"
 #include "veyra/runtime/security_policy_engine.h"
 #include "veyra/runtime/session_lifecycle.h"
 #include "veyra/runtime/ai_orchestrator_client.h"
@@ -35,7 +36,7 @@ struct LaunchOptions {
   std::string startup_persona_id;
   std::string startup_route_profile_id;
   std::string hot_route_after_start_profile_id;
-  std::string startup_url = "https://example.org";
+  std::string startup_url = "veyra:start";
   std::string runtime_root = ".veyra/runtime_sessions";
   std::string route_engine_binary_path;
   std::string artifact_scan_binary_path;
@@ -788,6 +789,15 @@ int RunBootstrap(const LaunchOptions& launch_options) {
                                        veyra::BuildEngineSecurityPolicy(profile, *allocation));
   }
 
+  // Bundled-router supervisor: launches Veyra's own tor/i2pd (shipped with the
+  // app, Tor-Browser style) so anonymity works with no system install.
+  veyra::RouterSupervisor router_supervisor(launch_options.runtime_root);
+  {
+    std::string router_status;
+    router_supervisor.Ensure(startup_profile->route_profile.route_type, &router_status);
+    std::cout << " - Router: " << router_status << "\n";
+  }
+
   veyra::RouteServiceClient route_service(launch_options.route_engine_binary_path);
   std::string route_error;
   if (!route_service.Bootstrap(base_manager.profiles(), launch_options.runtime_root, &route_error)) {
@@ -1053,6 +1063,8 @@ int RunBootstrap(const LaunchOptions& launch_options) {
   veyra::BrowserEngineConfig engine_config;
   engine_config.window_title = "ApexForge Veyra | Native Shell";
   engine_config.security_policy = startup_policy_it->second;
+  engine_config.persona_id = startup_profile->persona.id;
+  engine_config.ephemeral_persona = startup_policy_it->second.use_ephemeral_context;
   engine_config.artifact_scan_binary_path = launch_options.artifact_scan_binary_path;
   engine_config.fingerprint_script = startup_policy_it->second.fingerprint_script;
   engine_config.shell_ui_dist_path = launch_options.shell_ui_dist_path;
@@ -1141,6 +1153,11 @@ int RunBootstrap(const LaunchOptions& launch_options) {
             return;
           }
 
+          // Bring up the bundled router (tor/i2pd) for this route if needed.
+          std::string router_status;
+          router_supervisor.Ensure(hot_route.route_type, &router_status);
+          std::cout << "[router] " << router_status << "\n";
+
           veyra::EngineSecurityPolicy hot_policy =
               veyra::BuildEngineSecurityPolicy(hot_profile, *startup_session);
           hot_policy.route_proxy_uri = hot_route.proxy_uri;
@@ -1176,6 +1193,55 @@ int RunBootstrap(const LaunchOptions& launch_options) {
             engine->PushDashboardState(new_state_json);
           }
 
+        } else if (action.action == "switch_persona" && !action.persona_id.empty()) {
+          // Full runtime persona switch: resolve the new profile, switch its
+          // route, apply its precomputed security policy + permissions, and
+          // update the engine's active-persona state (history/fingerprint/UA/
+          // ephemeral). This is the real per-profile switch (not just a refresh).
+          const veyra::RuntimeProfile* next_profile =
+              effective_manager.FindProfileById(action.persona_id);
+          const auto next_policy_it = engine_policies_by_persona.find(action.persona_id);
+          const auto next_perms_it = permission_reports_by_persona.find(action.persona_id);
+          if (next_profile == nullptr || next_policy_it == engine_policies_by_persona.end() ||
+              next_perms_it == permission_reports_by_persona.end()) {
+            std::cerr << "[dashboard] Unknown persona: " << action.persona_id << "\n";
+            return;
+          }
+
+          veyra::EngineSecurityPolicy next_policy = next_policy_it->second;
+          veyra::RouteRuntimeState next_route;
+          std::string route_error;
+          if (route_service.SwitchRoute(*next_profile, launch_options.runtime_root,
+                                        &next_route, &route_error)) {
+            std::string router_status;
+            router_supervisor.Ensure(next_route.route_type, &router_status);
+            std::cout << "[router] " << router_status << "\n";
+            next_policy.route_proxy_uri = next_route.proxy_uri;
+            next_policy.route_dns_resolver = next_route.dns_resolver;
+            next_policy.route_health_status = next_route.health_status;
+            next_policy.route_leak_status = next_route.leak_status;
+            next_policy.proxy_mode = next_route.proxy_uri.empty()
+                ? (next_route.route_type == "direct" ? "system-default" : "no-proxy-hook")
+                : "custom-proxy";
+          }
+
+          std::string apply_error;
+          if (!engine->ApplySecurityPolicy(next_policy, next_perms_it->second, &apply_error)) {
+            std::cerr << "[dashboard] Persona policy apply failed: " << apply_error << "\n";
+            return;
+          }
+          engine->SetActivePersona(next_profile->persona.id, next_profile->persona.ephemeral);
+          startup_profile = next_profile;  // subsequent actions use the new persona
+          std::cout << "[dashboard] Persona switched to " << action.persona_id << "\n";
+
+          if (!launch_options.shell_ui_dist_path.empty()) {
+            const std::string new_state_json = veyra::SerializeDashboardState(
+                effective_manager, *next_profile, route_service, next_policy,
+                next_perms_it->second, effective_manager.tools(),
+                next_profile->persona.id, launch_options.runtime_root, "0.11");
+            engine->PushDashboardState(new_state_json);
+          }
+
         } else if (action.action == "invoke_tool" && !action.tool_id.empty()) {
           veyra::ToolBridgeClient tool_bridge(
               launch_options.tool_bridge_binary_path,
@@ -1198,7 +1264,7 @@ int RunBootstrap(const LaunchOptions& launch_options) {
 
         } else if (action.action == "open_tab") {
           const std::string& url = action.navigate_url.empty()
-              ? std::string("about:blank") : action.navigate_url;
+              ? std::string("veyra:start") : action.navigate_url;
           const std::size_t next_index = primary_window.tabs().size();
           primary_window.OpenTab(*startup_profile,
                                  route_service.routes().empty()

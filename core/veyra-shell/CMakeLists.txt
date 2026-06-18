@@ -1,15 +1,51 @@
-find_package(PkgConfig REQUIRED)
+find_package(PkgConfig QUIET)
 find_program(CARGO_EXECUTABLE cargo REQUIRED)
-pkg_check_modules(WEBKITGTK41 QUIET IMPORTED_TARGET webkit2gtk-4.1)
-pkg_check_modules(WEBKITGTK40 QUIET IMPORTED_TARGET webkit2gtk-4.0)
 
-if(WEBKITGTK41_FOUND)
-  set(VEYRA_WEBKITGTK_TARGET PkgConfig::WEBKITGTK41)
-elseif(WEBKITGTK40_FOUND)
-  set(VEYRA_WEBKITGTK_TARGET PkgConfig::WEBKITGTK40)
-else()
-  message(FATAL_ERROR
-    "WebKitGTK development package is required for Phase 1. Install webkit2gtk-4.1 (preferred) or webkit2gtk-4.0.")
+set(VEYRA_SHELL_SOURCES
+  src/engine/browser_engine_factory.cc
+  src/config/foundation_loader.cc
+  src/config/schema_validator.cc
+  src/config/startup_config.cc
+  src/main.cc
+  src/runtime/artifact_scan_service.cc
+  src/runtime/browser_window.cc
+  src/runtime/ai_orchestrator_client.cc
+  src/runtime/osint_workspace_client.cc
+  src/runtime/extension_engine.cc
+  src/runtime/fingerprint_engine.cc
+  src/runtime/shell_ui_bridge.cc
+  src/runtime/permission_broker.cc
+  src/runtime/tool_bridge_client.cc
+  src/runtime/profile_manager.cc
+  src/runtime/profile_registry.cc
+  src/runtime/route_service.cc
+  src/runtime/router_supervisor.cc
+  src/runtime/runtime_policy.cc
+  src/runtime/security_policy_engine.cc
+  src/runtime/session_lifecycle.cc
+  src/runtime/session_partition.cc
+  src/runtime/tab_model.cc
+  src/serialization/json.cc
+)
+
+set(VEYRA_SHELL_LIBS "")
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  pkg_check_modules(WEBKITGTK41 QUIET IMPORTED_TARGET webkit2gtk-4.1)
+  pkg_check_modules(WEBKITGTK40 QUIET IMPORTED_TARGET webkit2gtk-4.0)
+
+  if(WEBKITGTK41_FOUND)
+    set(VEYRA_WEBKITGTK_TARGET PkgConfig::WEBKITGTK41)
+  elseif(WEBKITGTK40_FOUND)
+    set(VEYRA_WEBKITGTK_TARGET PkgConfig::WEBKITGTK40)
+  endif()
+
+  if(VEYRA_WEBKITGTK_TARGET)
+    list(APPEND VEYRA_SHELL_SOURCES src/engine/webkitgtk_browser_engine.cc)
+    list(APPEND VEYRA_SHELL_LIBS ${VEYRA_WEBKITGTK_TARGET})
+  else()
+    message(WARNING "WebKitGTK dev package not found. Linux native shell will not be functional.")
+  endif()
 endif()
 
 set(VEYRA_ROUTE_ENGINE_TARGET_DIR ${CMAKE_BINARY_DIR}/cargo-route)
@@ -91,30 +127,7 @@ else()
 endif()
 
 add_executable(veyra_shell
-  src/engine/browser_engine_factory.cc
-  src/engine/webkitgtk_browser_engine.cc
-  src/config/foundation_loader.cc
-  src/config/schema_validator.cc
-  src/config/startup_config.cc
-  src/main.cc
-  src/runtime/artifact_scan_service.cc
-  src/runtime/browser_window.cc
-  src/runtime/ai_orchestrator_client.cc
-  src/runtime/osint_workspace_client.cc
-  src/runtime/extension_engine.cc
-  src/runtime/fingerprint_engine.cc
-  src/runtime/shell_ui_bridge.cc
-  src/runtime/permission_broker.cc
-  src/runtime/tool_bridge_client.cc
-  src/runtime/profile_manager.cc
-  src/runtime/profile_registry.cc
-  src/runtime/route_service.cc
-  src/runtime/runtime_policy.cc
-  src/runtime/security_policy_engine.cc
-  src/runtime/session_lifecycle.cc
-  src/runtime/session_partition.cc
-  src/runtime/tab_model.cc
-  src/serialization/json.cc
+  ${VEYRA_SHELL_SOURCES}
 )
 
 target_include_directories(veyra_shell
@@ -125,7 +138,7 @@ target_include_directories(veyra_shell
 
 target_link_libraries(veyra_shell
   PRIVATE
-    ${VEYRA_WEBKITGTK_TARGET}
+    ${VEYRA_SHELL_LIBS}
 )
 
 add_dependencies(veyra_shell veyra_route_engine veyra_artifact_scan veyra_tool_bridge)

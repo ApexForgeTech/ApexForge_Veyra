@@ -1,0 +1,1 @@
+/mnt/zboth/ApexForge_Veyra/android/app/build/intermediates/cxx/RelWithDebInfo/o5b3r2w1/obj/x86
