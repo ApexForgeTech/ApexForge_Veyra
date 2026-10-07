@@ -1,0 +1,67 @@
+[
+  {
+    "id": "casual",
+    "display_name": "Casual",
+    "javascript_policy": "allow",
+    "cookie_policy": "standard",
+    "storage_policy": "persistent",
+    "webrtc_policy": "allow",
+    "permission_policy": "prompt",
+    "download_policy": "quarantine",
+    "routing_requirement": "none",
+    "history_retention_policy": "standard",
+    "notes": "Balanced defaults for normal daily browsing."
+  },
+  {
+    "id": "hardened",
+    "display_name": "Hardened",
+    "javascript_policy": "restrict",
+    "cookie_policy": "strict",
+    "storage_policy": "scoped_persistent",
+    "webrtc_policy": "restrict",
+    "permission_policy": "strict_prompt",
+    "download_policy": "quarantine",
+    "routing_requirement": "isolated",
+    "history_retention_policy": "reduced",
+    "notes": "Stricter privacy and permission posture."
+  },
+  {
+    "id": "ghost",
+    "display_name": "Ghost",
+    "javascript_policy": "restrict",
+    "cookie_policy": "ephemeral_only",
+    "storage_policy": "memory_only",
+    "webrtc_policy": "disable",
+    "permission_policy": "deny_by_default",
+    "download_policy": "quarantine",
+    "routing_requirement": "isolated",
+    "history_retention_policy": "none",
+    "notes": "Ephemeral browsing with minimal retention."
+  },
+  {
+    "id": "redteam",
+    "display_name": "Red Team",
+    "javascript_policy": "high_restrict",
+    "cookie_policy": "ephemeral_only",
+    "storage_policy": "memory_only",
+    "webrtc_policy": "disable",
+    "permission_policy": "deny_by_default",
+    "download_policy": "quarantine",
+    "routing_requirement": "multi_hop_required",
+    "history_retention_policy": "none",
+    "notes": "High-scrutiny operational posture."
+  },
+  {
+    "id": "airgap",
+    "display_name": "Airgap Transfer",
+    "javascript_policy": "restrict",
+    "cookie_policy": "ephemeral_only",
+    "storage_policy": "memory_only",
+    "webrtc_policy": "disable",
+    "permission_policy": "deny_by_default",
+    "download_policy": "airgap_quarantine",
+    "routing_requirement": "isolated",
+    "history_retention_policy": "none",
+    "notes": "Analysis-first file transfer mode."
+  }
+]

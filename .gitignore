@@ -1,0 +1,89 @@
+node_modules/
+dist/
+build/
+out/
+release/
+cmake-build-*/
+*.o
+*.obj
+*.so
+*.dll
+*.dylib
+*.a
+*.lib
+*.exe
+ctd/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+.DS_Store
+Thumbs.db
+
+.env
+.env.*
+!.env.example
+
+coverage/
+.cache/
+
+# CMake in-source build artifacts (prefer out-of-source build/, but ignore strays)
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+/Makefile
+core/veyra-shell/Makefile
+*.cmake.stamp
+compile_commands.json
+
+# Rust / Cargo (Cargo.lock IS committed — these are binaries, not libraries)
+target/
+cargo-*/
+
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+
+# Veyra runtime sessions, profiles, quarantine (generated at run time)
+.veyra/
+*.sqlite
+*.sqlite-journal
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+
+# Veyra Android signing secrets
+android/keystore.properties
+android/local.properties
+android/.gradle/
+android/app/.cxx/
+android/app/build/
+android/build/
+android/*.hprof
+android/java_pid*.hprof
+*.apk
+*.aab
+android/app/*.jks
+!.Makefile
+# Bundled router binaries (large; fetched via scripts, not committed)
+vendor/routers/
+vendor/dl/
+android/app/src/main/jniLibs/
+Veyra-release.apk
+
+# Build binaries
+artifact_scan
+route_engine
+tool_bridge
+core/veyra-shell/veyra_shell

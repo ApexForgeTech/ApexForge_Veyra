@@ -1,0 +1,54 @@
+[
+  {
+    "id": "ai_full",
+    "display_name": "Full Assist",
+    "enabled": true,
+    "model": "llama3.2",
+    "endpoint": "http://127.0.0.1:11434",
+    "allow_page_content": true,
+    "allow_script_analysis": true,
+    "allow_phishing_check": true,
+    "retain_memory": true,
+    "max_input_chars": 16000,
+    "notes": "Full local-AI assist for the real-identity daily persona. Page summarization, script explanation, and phishing checks all enabled. Memory retained per persona scope."
+  },
+  {
+    "id": "ai_scoped",
+    "display_name": "Scoped Ephemeral",
+    "enabled": true,
+    "model": "llama3.2",
+    "endpoint": "http://127.0.0.1:11434",
+    "allow_page_content": true,
+    "allow_script_analysis": true,
+    "allow_phishing_check": true,
+    "retain_memory": false,
+    "max_input_chars": 8000,
+    "notes": "AI assist for anonymous and I2P research personas. Page content allowed but never retained between sessions. Lower input cap to reduce data exposure."
+  },
+  {
+    "id": "ai_restricted",
+    "display_name": "Restricted Operational",
+    "enabled": true,
+    "model": "llama3.2",
+    "endpoint": "http://127.0.0.1:11434",
+    "allow_page_content": false,
+    "allow_script_analysis": true,
+    "allow_phishing_check": true,
+    "retain_memory": false,
+    "max_input_chars": 4000,
+    "notes": "Red-team operational posture. Page content is NEVER sent to the model (operational security). Only operator-provided script snippets and URL-based phishing heuristics are processed. No memory retention."
+  },
+  {
+    "id": "ai_disabled",
+    "display_name": "Disabled",
+    "enabled": false,
+    "model": "none",
+    "endpoint": "none",
+    "allow_page_content": false,
+    "allow_script_analysis": false,
+    "allow_phishing_check": false,
+    "retain_memory": false,
+    "max_input_chars": 0,
+    "notes": "AI fully disabled. For airgap-transfer and maximum-isolation workflows where no content should leave the tab, even to a local model."
+  }
+]

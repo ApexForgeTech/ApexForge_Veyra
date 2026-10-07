@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apexforge.local/schemas/ai-policy.schema.json",
+  "title": "Veyra AI Policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "display_name",
+    "enabled",
+    "model",
+    "endpoint",
+    "allow_page_content",
+    "allow_script_analysis",
+    "allow_phishing_check",
+    "retain_memory",
+    "max_input_chars"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1
+    },
+    "endpoint": {
+      "type": "string",
+      "minLength": 1
+    },
+    "allow_page_content": {
+      "type": "boolean"
+    },
+    "allow_script_analysis": {
+      "type": "boolean"
+    },
+    "allow_phishing_check": {
+      "type": "boolean"
+    },
+    "retain_memory": {
+      "type": "boolean"
+    },
+    "max_input_chars": {
+      "type": "number"
+    },
+    "notes": {
+      "type": "string"
+    }
+  }
+}

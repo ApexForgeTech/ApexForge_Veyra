@@ -1,0 +1,62 @@
+[
+  {
+    "id": "osint_full",
+    "display_name": "Full Investigation",
+    "enabled": true,
+    "require_route": false,
+    "allow_whois": true,
+    "allow_dns": true,
+    "allow_archive": true,
+    "allow_username_search": true,
+    "allow_active_probing": true,
+    "max_targets_per_case": 200,
+    "max_username_sites": 30,
+    "retain_cases": true,
+    "notes": "Full OSINT capability for the real-identity daily persona. All modules enabled. Direct route is acceptable. Cases persisted to disk."
+  },
+  {
+    "id": "osint_passive",
+    "display_name": "Passive Routed",
+    "enabled": true,
+    "require_route": true,
+    "allow_whois": true,
+    "allow_dns": true,
+    "allow_archive": true,
+    "allow_username_search": false,
+    "allow_active_probing": false,
+    "max_targets_per_case": 60,
+    "max_username_sites": 0,
+    "retain_cases": false,
+    "notes": "Passive-only OSINT for anonymous and I2P research personas. WHOIS, DNS (via DoH), and archive lookups only. No active username probing. ALL egress must traverse the active route; refused if no proxy. Cases never persisted."
+  },
+  {
+    "id": "osint_operational",
+    "display_name": "Operational Routed",
+    "enabled": true,
+    "require_route": true,
+    "allow_whois": true,
+    "allow_dns": true,
+    "allow_archive": true,
+    "allow_username_search": true,
+    "allow_active_probing": true,
+    "max_targets_per_case": 120,
+    "max_username_sites": 20,
+    "retain_cases": false,
+    "notes": "Red-team operational OSINT. All modules enabled but STRICTLY routed: every lookup is refused unless the persona's proxy is active and healthy. Cases never persisted to disk."
+  },
+  {
+    "id": "osint_disabled",
+    "display_name": "Disabled",
+    "enabled": false,
+    "require_route": true,
+    "allow_whois": false,
+    "allow_dns": false,
+    "allow_archive": false,
+    "allow_username_search": false,
+    "allow_active_probing": false,
+    "max_targets_per_case": 0,
+    "max_username_sites": 0,
+    "retain_cases": false,
+    "notes": "OSINT fully disabled. For airgap-transfer and maximum-isolation workflows where no investigative network egress is permitted."
+  }
+]

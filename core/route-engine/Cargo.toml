@@ -1,0 +1,8 @@
+[package]
+name = "veyra-route-engine"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "route_engine"
+path = "src/main.rs"

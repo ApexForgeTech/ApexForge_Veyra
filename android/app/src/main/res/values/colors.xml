@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Veyra calm dark palette (mirrors apps/shell-ui globals.css) -->
+    <color name="veyra_bg">#0d121c</color>
+    <color name="veyra_bg2">#121826</color>
+    <color name="veyra_surface">#161d2c</color>
+    <color name="veyra_surface_hi">#1d2536</color>
+    <color name="veyra_text">#e8eef6</color>
+    <color name="veyra_text2">#9fb0c5</color>
+    <color name="veyra_muted">#64748b</color>
+    <color name="veyra_accent">#4c8dff</color>
+    <color name="veyra_border">#24314a</color>
+    <color name="veyra_danger">#f5685f</color>
+    <color name="veyra_brand">#0a4a7c</color>
+</resources>

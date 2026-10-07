@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apexforge.local/schemas/extension-policy.schema.json",
+  "title": "Veyra Extension Policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "display_name",
+    "allow_eval",
+    "allow_third_party_frames",
+    "block_mixed_content",
+    "allow_external_fonts"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "allow_eval": {
+      "type": "boolean"
+    },
+    "allow_third_party_frames": {
+      "type": "boolean"
+    },
+    "block_mixed_content": {
+      "type": "boolean"
+    },
+    "allow_external_fonts": {
+      "type": "boolean"
+    },
+    "blocked_domains": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "notes": {
+      "type": "string"
+    }
+  }
+}

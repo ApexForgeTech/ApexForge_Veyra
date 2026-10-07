@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Veyra
+GenericName=Security-focused Browser
+Comment=Independent browser with persona isolation, routed networking (VPN/Tor/I2P) and download quarantine
+# Exec/Icon point at the current project tree. If you move the project, edit the
+# two paths below (or run scripts/install-desktop.sh).
+Exec=sh -c 'cd /home/neo/Documents/ApexForge_Veyra && ./core/veyra-shell/veyra_shell --persona=real_identity --shell-ui-path=apps/shell-ui/dist --route-engine-bin=./route_engine --artifact-scan-bin=./artifact_scan'
+Icon=/home/neo/Documents/ApexForge_Veyra/veyra_logo.svg
+Terminal=false
+Categories=Network;WebBrowser;Security;
+StartupWMClass=veyra
+StartupNotify=true

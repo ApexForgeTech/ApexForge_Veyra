@@ -1,0 +1,67 @@
+[
+  {
+    "id": "trusted_daily",
+    "display_name": "Trusted Daily",
+    "allow_eval": true,
+    "allow_third_party_frames": true,
+    "block_mixed_content": false,
+    "allow_external_fonts": true,
+    "blocked_domains": [],
+    "notes": "Permissive policy for real-identity daily browsing. Allows eval, iframes, external fonts. No domain blocking."
+  },
+  {
+    "id": "minimal_locked",
+    "display_name": "Minimal Locked",
+    "allow_eval": false,
+    "allow_third_party_frames": false,
+    "block_mixed_content": true,
+    "allow_external_fonts": false,
+    "blocked_domains": [
+      "doubleclick.net",
+      "googlesyndication.com",
+      "googletagmanager.com",
+      "googletagservices.com",
+      "google-analytics.com",
+      "scorecardresearch.com",
+      "quantserve.com",
+      "cloudfront.net",
+      "akamaihd.net"
+    ],
+    "notes": "Locked policy for anonymous and I2P personas. Eval blocked. Mixed content blocked. Common tracker and analytics domains blocked. Third-party iframes blocked."
+  },
+  {
+    "id": "strict_redteam",
+    "display_name": "Strict Red Team",
+    "allow_eval": false,
+    "allow_third_party_frames": false,
+    "block_mixed_content": true,
+    "allow_external_fonts": false,
+    "blocked_domains": [
+      "google.com",
+      "googleapis.com",
+      "gstatic.com",
+      "doubleclick.net",
+      "googlesyndication.com",
+      "googletagmanager.com",
+      "facebook.com",
+      "connect.facebook.net",
+      "fbcdn.net",
+      "twitter.com",
+      "ads-twitter.com",
+      "t.co",
+      "scorecardresearch.com",
+      "quantserve.com",
+      "omtrdc.net",
+      "demdex.net",
+      "krxd.net",
+      "adsrvr.org",
+      "pubmatic.com",
+      "rubiconproject.com",
+      "openx.net",
+      "amazon-adsystem.com",
+      "cloudfront.net",
+      "akamaihd.net"
+    ],
+    "notes": "Maximum restriction for red-team and chained-route operations. Eval blocked. All known tracker, analytics, social, and ad domains blocked. No third-party frames or external fonts."
+  }
+]
